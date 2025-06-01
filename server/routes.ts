@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import multer from "multer";
 import { processDocumentSchema } from "@shared/schema";
 import OpenAI from "openai";
-import pdfParse from "pdf-parse";
+// PDF parsing temporarily disabled due to library issues
 
 // Configure multer for file uploads
 const upload = multer({
@@ -12,12 +12,12 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'text/plain'];
+  fileFilter: (req: any, file: any, cb: any) => {
+    const allowedTypes = ['text/plain'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and TXT files are allowed.'));
+      cb(new Error('Invalid file type. Only TXT files are allowed for now.'));
     }
   }
 });
@@ -41,12 +41,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Extract text based on file type
       if (req.file.mimetype === "application/pdf") {
-        try {
-          const pdfData = await pdfParse(req.file.buffer);
-          extractedText = pdfData.text;
-        } catch (error) {
-          return res.status(400).json({ message: "Failed to extract text from PDF" });
-        }
+        return res.status(400).json({ 
+          message: "PDF processing is temporarily unavailable. Please use text files (.txt) for now." 
+        });
       } else if (req.file.mimetype === "text/plain") {
         extractedText = req.file.buffer.toString('utf-8');
       }

@@ -106,6 +106,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Create a thread
           const thread = await openai.beta.threads.create();
+          
+          if (!thread || !thread.id) {
+            throw new Error(`Failed to create thread for chunk ${i + 1}`);
+          }
 
           // Add message to thread
           await openai.beta.threads.messages.create(thread.id, {

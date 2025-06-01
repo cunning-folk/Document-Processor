@@ -105,7 +105,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. Here is the text:\n\n${chunk}`;
 
           // Create a thread
+          console.log(`Creating thread for chunk ${i + 1}...`);
           const thread = await openai.beta.threads.create();
+          console.log(`Thread created:`, thread);
           
           if (!thread || !thread.id) {
             throw new Error(`Failed to create thread for chunk ${i + 1}`);

@@ -34,10 +34,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      const { apiKey, assistantId } = req.body;
+      const apiKey = process.env.OPENAI_API_KEY;
+      const assistantId = req.body.assistantId || "asst_OqSPqevzweqfm85VGKcJuNPF";
       
-      if (!apiKey || !assistantId) {
-        return res.status(400).json({ message: "API key and Assistant ID are required" });
+      if (!apiKey) {
+        return res.status(500).json({ message: "OpenAI API key not configured" });
       }
 
       let extractedText = "";

@@ -31,13 +31,8 @@ interface ProcessingStep {
 }
 
 export default function DocumentProcessor() {
-  const [config, setConfig] = useState({
-    apiKey: "",
-    assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
-  });
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [processedMarkdown, setProcessedMarkdown] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     { id: "extract", label: "Extracting text from document...", status: "pending" },
     { id: "openai", label: "Sending to OpenAI Assistant...", status: "pending" },
@@ -103,24 +98,6 @@ export default function DocumentProcessor() {
   };
 
   const handleProcessDocument = () => {
-    if (!config.apiKey) {
-      toast({
-        title: "Configuration Required",
-        description: "Please enter your OpenAI API key",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!config.assistantId) {
-      toast({
-        title: "Configuration Required", 
-        description: "Please enter the Assistant ID",
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (!uploadedFile) {
       toast({
         title: "File Required",
@@ -132,8 +109,8 @@ export default function DocumentProcessor() {
 
     processDocumentMutation.mutate({
       file: uploadedFile,
-      apiKey: config.apiKey,
-      assistantId: config.assistantId
+      apiKey: "", // Will be handled by server environment variables
+      assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
     });
   };
 
@@ -199,56 +176,7 @@ export default function DocumentProcessor() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        {/* Configuration Panel */}
-        <Card className="mb-8">
-          <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
-              <Settings className="text-primary mr-2" />
-              Configuration
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="api-key" className="text-sm font-medium text-slate-700 mb-2">
-                  OpenAI API Key
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="api-key"
-                    type={showApiKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    value={config.apiKey}
-                    onChange={(e) => setConfig(prev => ({ ...prev, apiKey: e.target.value }))}
-                    className="pr-10"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                  >
-                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="assistant-id" className="text-sm font-medium text-slate-700 mb-2">
-                  Assistant ID
-                </Label>
-                <Input
-                  id="assistant-id"
-                  type="text"
-                  placeholder="asst_OqSPqevzweqfm85VGKcJuNPF"
-                  value={config.assistantId}
-                  onChange={(e) => setConfig(prev => ({ ...prev, assistantId: e.target.value }))}
-                  className="font-mono text-sm"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+
 
         {/* File Upload */}
         <Card className="mb-8">

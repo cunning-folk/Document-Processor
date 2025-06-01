@@ -35,8 +35,9 @@ export default function DocumentProcessor() {
   const [processedMarkdown, setProcessedMarkdown] = useState("");
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     { id: "extract", label: "Extracting text from document...", status: "pending" },
-    { id: "openai", label: "Sending to OpenAI Assistant...", status: "pending" },
-    { id: "format", label: "Cleaning and formatting text...", status: "pending" }
+    { id: "chunk", label: "Checking document size...", status: "pending" },
+    { id: "openai", label: "Processing with OpenAI Assistant...", status: "pending" },
+    { id: "format", label: "Combining results...", status: "pending" }
   ]);
 
   const { toast } = useToast();
@@ -53,16 +54,20 @@ export default function DocumentProcessor() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       updateProcessingStep("extract", "completed");
       
-      updateProcessingStep("openai", "active");
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      updateProcessingStep("openai", "completed");
+      updateProcessingStep("chunk", "active");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      updateProcessingStep("chunk", "completed");
       
-      updateProcessingStep("format", "active");
+      updateProcessingStep("openai", "active");
       
       const response = await apiRequest("POST", "/api/process-document", formData);
       const result = await response.json();
       
+      updateProcessingStep("openai", "completed");
+      updateProcessingStep("format", "active");
+      await new Promise(resolve => setTimeout(resolve, 500));
       updateProcessingStep("format", "completed");
+      
       return result;
     },
     onSuccess: (data) => {

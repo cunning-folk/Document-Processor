@@ -15,13 +15,15 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
   const { toast } = useToast();
 
   const validateFile = (file: File): boolean => {
-    const validTypes = ['application/pdf', 'text/plain'];
+    const validTypes = ['text/plain', 'text/markdown'];
+    const validExtensions = ['.txt', '.md', '.markdown'];
+    const fileExtension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
     const maxSize = 10 * 1024 * 1024; // 10MB
 
-    if (!validTypes.includes(file.type)) {
+    if (!validTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
       toast({
         title: "Invalid file type",
-        description: "Please upload a PDF or TXT file.",
+        description: "Please upload a TXT or Markdown file.",
         variant: "destructive",
       });
       return false;
@@ -84,7 +86,7 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
     if (!disabled) {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.pdf,.txt';
+      input.accept = '.txt,.md,.markdown';
       input.onchange = (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {
@@ -108,8 +110,9 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
   };
 
   const getFileIcon = (file: File) => {
-    if (file.type === 'application/pdf') {
-      return <FilePen className="text-red-500" />;
+    const fileName = file.name.toLowerCase();
+    if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
+      return <FileText className="text-green-500" />;
     }
     return <FileText className="text-blue-500" />;
   };
@@ -139,18 +142,18 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
               Drop your file here or click to browse
             </p>
             <p className="text-sm text-slate-500">
-              Supports PDF and TXT files up to 10MB
+              Supports TXT and Markdown files up to 10MB
             </p>
           </div>
           
           <div className="flex items-center justify-center space-x-4 text-sm text-slate-400">
             <span className="flex items-center">
-              <FilePen className="text-red-500 mr-1 h-4 w-4" />
-              PDF
-            </span>
-            <span className="flex items-center">
               <FileText className="text-blue-500 mr-1 h-4 w-4" />
               TXT
+            </span>
+            <span className="flex items-center">
+              <FileText className="text-green-500 mr-1 h-4 w-4" />
+              Markdown
             </span>
           </div>
         </div>

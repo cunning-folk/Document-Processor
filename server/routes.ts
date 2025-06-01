@@ -13,11 +13,14 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req: any, file: any, cb: any) => {
-    const allowedTypes = ['text/plain'];
-    if (allowedTypes.includes(file.mimetype)) {
+    const allowedTypes = ['text/plain', 'text/markdown'];
+    const allowedExtensions = ['.txt', '.md', '.markdown'];
+    const fileExtension = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
+    
+    if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only TXT files are allowed for now.'));
+      cb(new Error('Invalid file type. Only TXT and Markdown files are allowed.'));
     }
   }
 });
@@ -42,9 +45,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract text based on file type
       if (req.file.mimetype === "application/pdf") {
         return res.status(400).json({ 
-          message: "PDF processing is temporarily unavailable. Please use text files (.txt) for now." 
+          message: "PDF processing is temporarily unavailable. Please use text or markdown files for now." 
         });
-      } else if (req.file.mimetype === "text/plain") {
+      } else if (req.file.mimetype === "text/plain" || req.file.mimetype === "text/markdown" || 
+                 req.file.originalname.toLowerCase().endsWith('.md') || 
+                 req.file.originalname.toLowerCase().endsWith('.markdown')) {
         extractedText = req.file.buffer.toString('utf-8');
       }
 

@@ -1,0 +1,168 @@
+import OpenAI from 'openai';
+import { storage } from './storage';
+import { log } from './vite';
+
+export class BackgroundProcessor {
+  private isProcessing = false;
+  private processingInterval: NodeJS.Timeout | null = null;
+
+  start() {
+    if (this.processingInterval) return;
+    
+    log("Starting background processor", "background-processor");
+    this.processingInterval = setInterval(() => {
+      this.processNextChunk();
+    }, 2000); // Check every 2 seconds
+  }
+
+  stop() {
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+      log("Stopped background processor", "background-processor");
+    }
+  }
+
+  async processNextChunk() {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+
+    try {
+      // Find pending chunks to process
+      const pendingDocuments = await storage.getDocumentsByStatus('processing');
+      
+      for (const document of pendingDocuments) {
+        const chunks = await storage.getDocumentChunks(document.id);
+        const pendingChunk = chunks.find(chunk => chunk.status === 'pending');
+        
+        if (pendingChunk) {
+          await this.processChunk(document, pendingChunk, chunks.length);
+          break; // Process one chunk at a time
+        } else {
+          // Check if all chunks are completed
+          const completedChunks = chunks.filter(chunk => chunk.status === 'completed');
+          const failedChunks = chunks.filter(chunk => chunk.status === 'failed');
+          
+          if (completedChunks.length === chunks.length) {
+            // All chunks completed, combine results
+            await this.finalizeDocument(document.id, chunks);
+          } else if (failedChunks.length > 0) {
+            // Some chunks failed
+            await storage.updateDocument(document.id, {
+              status: 'failed',
+              errorMessage: `${failedChunks.length} chunks failed to process`
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      log(`Background processor error: ${error.message}`, "background-processor");
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  async processChunk(document: any, chunk: any, totalChunks: number) {
+    try {
+      log(`Processing chunk ${chunk.chunkIndex + 1} of ${totalChunks} for document ${document.id}`, "background-processor");
+      
+      await storage.updateDocumentChunk(chunk.id, { status: 'processing' });
+      
+      const openai = new OpenAI({ apiKey: document.apiKey });
+      
+      const isMultipart = totalChunks > 1;
+      const chunkPrompt = isMultipart 
+        ? `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. This is part ${chunk.chunkIndex + 1} of ${totalChunks} from a larger document. Here is the text:\n\n${chunk.content}`
+        : `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. Here is the text:\n\n${chunk.content}`;
+
+      // Create a thread
+      const thread = await openai.beta.threads.create();
+      
+      if (!thread || !thread.id) {
+        throw new Error(`Failed to create thread for chunk ${chunk.chunkIndex + 1}`);
+      }
+
+      // Add message to thread
+      await openai.beta.threads.messages.create(thread.id, {
+        role: "user",
+        content: chunkPrompt
+      });
+
+      // Run the assistant
+      const run = await openai.beta.threads.runs.create(thread.id, {
+        assistant_id: document.assistantId
+      });
+
+      // Poll for completion
+      let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
+        thread_id: thread.id
+      });
+      
+      while (runStatus.status === "queued" || runStatus.status === "in_progress") {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        runStatus = await openai.beta.threads.runs.retrieve(run.id, {
+          thread_id: thread.id
+        });
+      }
+
+      if (runStatus.status === "completed") {
+        // Get the assistant's response
+        const messages = await openai.beta.threads.messages.list(thread.id);
+        const assistantMessage = messages.data.find(m => m.role === "assistant");
+        
+        if (assistantMessage && assistantMessage.content[0].type === "text") {
+          const processedContent = assistantMessage.content[0].text.value;
+          
+          await storage.updateDocumentChunk(chunk.id, {
+            processedContent,
+            status: 'completed'
+          });
+          
+          // Update document processed chunks count
+          const currentDoc = await storage.getDocument(document.id);
+          await storage.updateDocument(document.id, {
+            processedChunks: (currentDoc?.processedChunks || 0) + 1
+          });
+          
+          log(`Completed chunk ${chunk.chunkIndex + 1} for document ${document.id}`, "background-processor");
+        } else {
+          throw new Error(`No valid response from assistant for chunk ${chunk.chunkIndex + 1}`);
+        }
+      } else {
+        throw new Error(`Assistant run failed with status: ${runStatus.status} for chunk ${chunk.chunkIndex + 1}`);
+      }
+      
+    } catch (error: any) {
+      log(`Error processing chunk ${chunk.chunkIndex + 1}: ${error.message}`, "background-processor");
+      await storage.updateDocumentChunk(chunk.id, {
+        status: 'failed',
+        errorMessage: error.message
+      });
+    }
+  }
+
+  async finalizeDocument(documentId: number, chunks: any[]) {
+    try {
+      // Combine all processed chunks in order
+      const sortedChunks = chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      const processedMarkdown = sortedChunks
+        .map(chunk => chunk.processedContent)
+        .join('\n\n');
+      
+      await storage.updateDocument(documentId, {
+        processedMarkdown,
+        status: 'completed'
+      });
+      
+      log(`Document ${documentId} processing completed`, "background-processor");
+    } catch (error: any) {
+      log(`Error finalizing document ${documentId}: ${error.message}`, "background-processor");
+      await storage.updateDocument(documentId, {
+        status: 'failed',
+        errorMessage: 'Failed to finalize document'
+      });
+    }
+  }
+}
+
+export const backgroundProcessor = new BackgroundProcessor();

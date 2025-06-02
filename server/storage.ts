@@ -1,6 +1,6 @@
 import { documents, documentChunks, type Document, type InsertDocument, type DocumentChunk, type InsertDocumentChunk } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   getDocument(id: number): Promise<Document | undefined>;
@@ -64,12 +64,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getChunkByDocumentAndIndex(documentId: number, chunkIndex: number): Promise<DocumentChunk | undefined> {
-    const [chunk] = await db
+    const results = await db
       .select()
       .from(documentChunks)
-      .where(eq(documentChunks.documentId, documentId))
-      .where(eq(documentChunks.chunkIndex, chunkIndex));
-    return chunk || undefined;
+      .where(and(
+        eq(documentChunks.documentId, documentId),
+        eq(documentChunks.chunkIndex, chunkIndex)
+      ));
+    return results[0] || undefined;
   }
 }
 

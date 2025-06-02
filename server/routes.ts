@@ -67,44 +67,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assistantId
       });
 
-      // Process with OpenAI Assistant
-      try {
-        const openai = new OpenAI({ apiKey });
+      // Chunk the document and create chunk records
+      const maxChunkSize = 250000;
+      const chunks = [];
+      
+      if (extractedText.length > maxChunkSize) {
+        const paragraphs = extractedText.split('\n\n');
+        let currentChunk = '';
         
-        // Check if text needs to be chunked (OpenAI limit is 256,000 characters)
-        const maxChunkSize = 250000; // Leave some buffer for prompt text
-        const chunks = [];
-        
-        if (extractedText.length > maxChunkSize) {
-          // Split into chunks at paragraph boundaries when possible
-          const paragraphs = extractedText.split('\n\n');
-          let currentChunk = '';
-          
-          for (const paragraph of paragraphs) {
-            if ((currentChunk + paragraph).length > maxChunkSize && currentChunk.length > 0) {
-              chunks.push(currentChunk.trim());
-              currentChunk = paragraph;
-            } else {
-              currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-            }
-          }
-          
-          if (currentChunk.trim()) {
+        for (const paragraph of paragraphs) {
+          if ((currentChunk + paragraph).length > maxChunkSize && currentChunk.length > 0) {
             chunks.push(currentChunk.trim());
+            currentChunk = paragraph;
+          } else {
+            currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
           }
-        } else {
-          chunks.push(extractedText);
         }
-
-        let processedMarkdown = '';
         
-        // Process each chunk
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          const isMultipart = chunks.length > 1;
-          const chunkPrompt = isMultipart 
-            ? `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. This is part ${i + 1} of ${chunks.length} from a larger document. Here is the text:\n\n${chunk}`
-            : `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. Here is the text:\n\n${chunk}`;
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+      } else {
+        chunks.push(extractedText);
+      }
+
+      // Update document with total chunks and set to processing
+      await storage.updateDocument(document.id, {
+        totalChunks: chunks.length,
+        status: "processing"
+      });
+
+      // Create chunk records
+      for (let i = 0; i < chunks.length; i++) {
+        await storage.createDocumentChunk({
+          documentId: document.id,
+          chunkIndex: i,
+          content: chunks[i],
+          status: "pending"
+        });
+      }
+
+      // Return immediately - processing will happen in background
+      res.json({
+        id: document.id,
+        filename: req.file.originalname,
+        status: "processing",
+        totalChunks: chunks.length,
+        processedChunks: 0
+      });
 
           // Create a thread
           console.log(`Creating thread for chunk ${i + 1}...`);

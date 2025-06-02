@@ -150,10 +150,10 @@ export default function DocumentHistory() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Document History</h1>
-        <p className="text-muted-foreground">
+    <div className="container mx-auto py-4 px-4 sm:py-8">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-2">
+        <h1 className="text-2xl sm:text-3xl font-bold">Document History</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">
           {data?.pagination.totalCount || 0} documents total
         </p>
       </div>
@@ -170,39 +170,40 @@ export default function DocumentHistory() {
           <div className="space-y-4">
             {data?.documents.map((doc) => (
               <Card key={doc.id}>
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle className="text-lg">{doc.filename}</CardTitle>
-                      <CardDescription>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base sm:text-lg truncate">{doc.filename}</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
                         Uploaded {formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}
                       </CardDescription>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                       {getStatusBadge(doc.status)}
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
                     <div className="flex-1">
                       {getProgressText(doc) && (
-                        <p className="text-sm text-muted-foreground mb-2">
+                        <p className="text-xs sm:text-sm text-muted-foreground">
                           {getProgressText(doc)}
                         </p>
                       )}
                       {doc.status === 'failed' && doc.errorMessage && (
-                        <p className="text-sm text-red-500 mb-2">
+                        <p className="text-xs sm:text-sm text-red-500">
                           Error: {doc.errorMessage}
                         </p>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       {doc.status === 'completed' && doc.processedMarkdown && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleDownload(doc.id, doc.filename)}
+                          className="flex-1 sm:flex-none"
                         >
                           <Download className="h-4 w-4 mr-2" />
                           Download
@@ -213,6 +214,7 @@ export default function DocumentHistory() {
                         size="sm"
                         onClick={() => deleteMutation.mutate(doc.id)}
                         disabled={deleteMutation.isPending}
+                        className="flex-1 sm:flex-none"
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete

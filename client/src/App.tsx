@@ -15,25 +15,29 @@ function Navigation() {
   return (
     <nav className="border-b">
       <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Document Processor</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h1 className="text-lg sm:text-xl font-bold">Document Processor</h1>
           <div className="flex gap-2">
             <Link href="/">
               <Button 
                 variant={location === "/" ? "default" : "outline"}
                 size="sm"
+                className="flex-1 sm:flex-none"
               >
-                <FileText className="h-4 w-4 mr-2" />
-                Process Document
+                <FileText className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Process Document</span>
+                <span className="sm:hidden">Process</span>
               </Button>
             </Link>
             <Link href="/history">
               <Button 
                 variant={location === "/history" ? "default" : "outline"}
                 size="sm"
+                className="flex-1 sm:flex-none"
               >
-                <History className="h-4 w-4 mr-2" />
-                History
+                <History className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">History</span>
+                <span className="sm:hidden">History</span>
               </Button>
             </Link>
           </div>

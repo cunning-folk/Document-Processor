@@ -165,29 +165,14 @@ export default function DocumentProcessor() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <FileText className="text-white text-lg" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-800">Document Text Processor</h1>
-              <p className="text-sm text-slate-500">Convert and clean documents with AI assistance</p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
 
 
         {/* File Upload */}
-        <Card className="mb-8">
+        <Card className="mb-6 sm:mb-8">
           <CardContent className="pt-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
-              <Upload className="text-primary mr-2" />
+            <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-4 flex items-center">
+              <Upload className="text-primary mr-2 h-4 w-4 sm:h-5 sm:w-5" />
               Upload Document
             </h2>
             
@@ -200,12 +185,12 @@ export default function DocumentProcessor() {
         </Card>
 
         {/* Process Button */}
-        <div className="flex justify-center mb-8">
+        <div className="flex justify-center mb-6 sm:mb-8">
           <Button
             onClick={handleProcessDocument}
             disabled={processDocumentMutation.isPending}
             size="lg"
-            className="px-8 py-3"
+            className="w-full sm:w-auto px-6 sm:px-8 py-3"
           >
             {processDocumentMutation.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -244,28 +229,32 @@ export default function DocumentProcessor() {
         {/* Results */}
         {processedMarkdown && (
           <Card>
-            <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-800 flex items-center">
-                <FileText className="text-green-500 mr-2" />
-                Processed Result
-              </h2>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyToClipboard}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownload}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
-                </Button>
+            <div className="border-b border-gray-200 px-4 sm:px-6 py-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center">
+                  <FileText className="text-green-500 mr-2 h-4 w-4 sm:h-5 sm:w-5" />
+                  Processed Result
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyToClipboard}
+                    className="flex-1 sm:flex-none"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownload}
+                    className="flex-1 sm:flex-none"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
               </div>
             </div>
             

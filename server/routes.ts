@@ -1,32 +1,19 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { Express } from "express";
+import { createServer, Server } from "http";
 import multer from "multer";
-import { processDocumentSchema } from "@shared/schema";
-import OpenAI from "openai";
-// PDF parsing temporarily disabled due to library issues
+import { storage } from "./storage";
+import { log } from "./vite";
+import { backgroundProcessor } from "./background-processor";
 
-// Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-  fileFilter: (req: any, file: any, cb: any) => {
-    const allowedTypes = ['text/plain', 'text/markdown'];
-    const allowedExtensions = ['.txt', '.md', '.markdown'];
-    const fileExtension = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
-    
-    if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only TXT and Markdown files are allowed.'));
-    }
-  }
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+  // Start background processor
+  backgroundProcessor.start();
+
   // Process document endpoint
   app.post("/api/process-document", upload.single("file"), async (req, res) => {
     try {
@@ -34,24 +21,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      // Get API credentials from environment
       const apiKey = process.env.OPENAI_API_KEY;
-      const assistantId = req.body.assistantId || "asst_OqSPqevzweqfm85VGKcJuNPF";
-      
+      const assistantId = "asst_OqSPqevzweqfm85VGKcJuNPF";
+
       if (!apiKey) {
-        return res.status(500).json({ message: "OpenAI API key not configured" });
+        return res.status(400).json({ message: "OpenAI API key not configured" });
       }
 
+      // Extract text from file
       let extractedText = "";
-      
-      // Extract text based on file type
-      if (req.file.mimetype === "application/pdf") {
+      const fileExtension = req.file.originalname.toLowerCase().split('.').pop();
+
+      if (fileExtension === "txt" || fileExtension === "md" || fileExtension === "markdown") {
+        extractedText = req.file.buffer.toString("utf-8");
+      } else {
         return res.status(400).json({ 
-          message: "PDF processing is temporarily unavailable. Please use text or markdown files for now." 
+          message: "Unsupported file type. Please upload .txt, .md, or .markdown files." 
         });
-      } else if (req.file.mimetype === "text/plain" || req.file.mimetype === "text/markdown" || 
-                 req.file.originalname.toLowerCase().endsWith('.md') || 
-                 req.file.originalname.toLowerCase().endsWith('.markdown')) {
-        extractedText = req.file.buffer.toString('utf-8');
       }
 
       if (!extractedText.trim()) {
@@ -116,77 +103,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processedChunks: 0
       });
 
-          // Create a thread
-          console.log(`Creating thread for chunk ${i + 1}...`);
-          const thread = await openai.beta.threads.create();
-          console.log(`Thread created:`, thread);
-          
-          if (!thread || !thread.id) {
-            throw new Error(`Failed to create thread for chunk ${i + 1}`);
-          }
-
-          // Add message to thread
-          await openai.beta.threads.messages.create(thread.id, {
-            role: "user",
-            content: chunkPrompt
-          });
-
-          // Run the assistant
-          const run = await openai.beta.threads.runs.create(thread.id, {
-            assistant_id: assistantId
-          });
-
-          // Poll for completion
-          let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
-            thread_id: thread.id
-          });
-          
-          while (runStatus.status === "queued" || runStatus.status === "in_progress") {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            runStatus = await openai.beta.threads.runs.retrieve(run.id, {
-              thread_id: thread.id
-            });
-          }
-
-          if (runStatus.status === "completed") {
-            // Get the assistant's response
-            const messages = await openai.beta.threads.messages.list(thread.id);
-            const assistantMessage = messages.data.find(msg => msg.role === "assistant");
-            
-            if (assistantMessage && assistantMessage.content[0].type === "text") {
-              const chunkResult = assistantMessage.content[0].text.value;
-              processedMarkdown += (processedMarkdown ? '\n\n' : '') + chunkResult;
-            } else {
-              throw new Error(`No valid response from assistant for chunk ${i + 1}`);
-            }
-          } else {
-            throw new Error(`Assistant run failed with status: ${runStatus.status} for chunk ${i + 1}`);
-          }
-        }
-
-        // Update document with processed result
-        await storage.updateDocument(document.id, {
-          processedMarkdown,
-          status: "completed"
-        });
-
-        res.json({
-          id: document.id,
-          filename: req.file.originalname,
-          processedMarkdown,
-          status: "completed",
-          chunksProcessed: chunks.length
-        });
-
-      } catch (openaiError: any) {
-        await storage.updateDocument(document.id, { status: "failed" });
-        console.error("OpenAI error:", openaiError);
-        return res.status(500).json({ 
-          message: "Failed to process document with OpenAI Assistant",
-          error: openaiError.message 
-        });
-      }
-
     } catch (error: any) {
       console.error("Processing error:", error);
       res.status(500).json({ 
@@ -196,7 +112,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get document by ID
+  // Get document status endpoint
+  app.get("/api/document/:id", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      
+      res.json(document);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to get document", error: error.message });
+    }
+  });
+
+  // Get document by ID (legacy endpoint)
   app.get("/api/documents/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

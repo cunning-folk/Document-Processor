@@ -1,48 +1,76 @@
-import { documents, type Document, type InsertDocument } from "@shared/schema";
+import { documents, documentChunks, type Document, type InsertDocument, type DocumentChunk, type InsertDocumentChunk } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   getDocument(id: number): Promise<Document | undefined>;
   createDocument(document: InsertDocument): Promise<Document>;
   updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined>;
   getDocumentsByStatus(status: string): Promise<Document[]>;
+  
+  // Chunk management
+  createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
+  getDocumentChunks(documentId: number): Promise<DocumentChunk[]>;
+  updateDocumentChunk(id: number, updates: Partial<DocumentChunk>): Promise<DocumentChunk | undefined>;
+  getChunkByDocumentAndIndex(documentId: number, chunkIndex: number): Promise<DocumentChunk | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private documents: Map<number, Document>;
-  currentId: number;
-
-  constructor() {
-    this.documents = new Map();
-    this.currentId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   async getDocument(id: number): Promise<Document | undefined> {
-    return this.documents.get(id);
+    const [document] = await db.select().from(documents).where(eq(documents.id, id));
+    return document || undefined;
   }
 
   async createDocument(insertDocument: InsertDocument): Promise<Document> {
-    const id = this.currentId++;
-    const document: Document = { 
-      ...insertDocument, 
-      id,
-      createdAt: new Date()
-    };
-    this.documents.set(id, document);
+    const [document] = await db
+      .insert(documents)
+      .values(insertDocument)
+      .returning();
     return document;
   }
 
   async updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined> {
-    const document = this.documents.get(id);
-    if (!document) return undefined;
-    
-    const updatedDocument = { ...document, ...updates };
-    this.documents.set(id, updatedDocument);
-    return updatedDocument;
+    const [document] = await db
+      .update(documents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(documents.id, id))
+      .returning();
+    return document || undefined;
   }
 
   async getDocumentsByStatus(status: string): Promise<Document[]> {
-    return Array.from(this.documents.values()).filter(doc => doc.status === status);
+    return await db.select().from(documents).where(eq(documents.status, status));
+  }
+
+  async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
+    const [documentChunk] = await db
+      .insert(documentChunks)
+      .values(chunk)
+      .returning();
+    return documentChunk;
+  }
+
+  async getDocumentChunks(documentId: number): Promise<DocumentChunk[]> {
+    return await db.select().from(documentChunks).where(eq(documentChunks.documentId, documentId));
+  }
+
+  async updateDocumentChunk(id: number, updates: Partial<DocumentChunk>): Promise<DocumentChunk | undefined> {
+    const [chunk] = await db
+      .update(documentChunks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(documentChunks.id, id))
+      .returning();
+    return chunk || undefined;
+  }
+
+  async getChunkByDocumentAndIndex(documentId: number, chunkIndex: number): Promise<DocumentChunk | undefined> {
+    const [chunk] = await db
+      .select()
+      .from(documentChunks)
+      .where(eq(documentChunks.documentId, documentId))
+      .where(eq(documentChunks.chunkIndex, chunkIndex));
+    return chunk || undefined;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

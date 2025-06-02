@@ -62,7 +62,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const document = await storage.createDocument({
         filename: req.file.originalname,
         originalText: extractedText,
-        status: "processing"
+        status: "pending",
+        apiKey,
+        assistantId
       });
 
       // Process with OpenAI Assistant

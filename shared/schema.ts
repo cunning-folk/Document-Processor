@@ -14,8 +14,42 @@ export const documents = pgTable("documents", {
   originalText: text("original_text").notNull(),
   processedMarkdown: text("processed_markdown"),
   status: text("status").notNull().default("pending"), // pending, processing, completed, failed
+  totalChunks: integer("total_chunks").default(1),
+  processedChunks: integer("processed_chunks").default(0),
+  errorMessage: text("error_message"),
+  apiKey: text("api_key").notNull(),
+  assistantId: text("assistant_id").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const documentChunks = pgTable("document_chunks", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => documents.id),
+  chunkIndex: integer("chunk_index").notNull(),
+  content: text("content").notNull(),
+  processedContent: text("processed_content"),
+  status: text("status").notNull().default("pending"), // pending, processing, completed, failed
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const documentsRelations = {
+  chunks: {
+    type: "one-to-many",
+    table: documentChunks,
+    foreignKey: "documentId"
+  }
+};
+
+export const documentChunksRelations = {
+  document: {
+    type: "many-to-one", 
+    table: documents,
+    foreignKey: "documentId"
+  }
+};
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -27,12 +61,24 @@ export const insertDocumentSchema = createInsertSchema(documents).pick({
   originalText: true,
   processedMarkdown: true,
   status: true,
+  apiKey: true,
+  assistantId: true,
+});
+
+export const insertDocumentChunkSchema = createInsertSchema(documentChunks).pick({
+  documentId: true,
+  chunkIndex: true,
+  content: true,
+  processedContent: true,
+  status: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type Document = typeof documents.$inferSelect;
+export type InsertDocumentChunk = z.infer<typeof insertDocumentChunkSchema>;
+export type DocumentChunk = typeof documentChunks.$inferSelect;
 
 // API request/response schemas
 export const configSchema = z.object({

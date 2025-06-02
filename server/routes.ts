@@ -166,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           chunksProcessed: chunks.length
         });
 
-      } catch (openaiError) {
+      } catch (openaiError: any) {
         await storage.updateDocument(document.id, { status: "failed" });
         console.error("OpenAI error:", openaiError);
         return res.status(500).json({ 
@@ -175,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Processing error:", error);
       res.status(500).json({ 
         message: "Failed to process document",

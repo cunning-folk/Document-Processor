@@ -128,7 +128,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get document by ID (legacy endpoint)
+  // Get all documents (history)
+  app.get("/api/documents", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const offset = (page - 1) * limit;
+      
+      // Get all documents ordered by creation date (newest first)
+      const allDocuments = await storage.getAllDocuments();
+      const totalCount = allDocuments.length;
+      const documents = allDocuments
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(offset, offset + limit);
+      
+      res.json({
+        documents,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit)
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to retrieve documents", error: error.message });
+    }
+  });
+
+  // Get document by ID
   app.get("/api/documents/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -141,6 +169,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(document);
     } catch (error) {
       res.status(500).json({ message: "Failed to retrieve document" });
+    }
+  });
+
+  // Download processed document as markdown file
+  app.get("/api/documents/:id/download", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const document = await storage.getDocument(id);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      
+      if (document.status !== 'completed' || !document.processedMarkdown) {
+        return res.status(400).json({ message: "Document processing not completed or no processed content available" });
+      }
+      
+      // Create filename for download
+      const originalName = document.filename.replace(/\.[^/.]+$/, ""); // Remove extension
+      const downloadFilename = `${originalName}_processed.md`;
+      
+      res.setHeader('Content-Type', 'text/markdown');
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+      res.send(document.processedMarkdown);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to download document", error: error.message });
+    }
+  });
+
+  // Delete document
+  app.delete("/api/documents/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteDocument(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      
+      res.json({ message: "Document deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to delete document", error: error.message });
     }
   });
 

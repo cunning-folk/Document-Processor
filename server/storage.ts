@@ -7,6 +7,8 @@ export interface IStorage {
   createDocument(document: InsertDocument): Promise<Document>;
   updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined>;
   getDocumentsByStatus(status: string): Promise<Document[]>;
+  getAllDocuments(): Promise<Document[]>;
+  deleteDocument(id: number): Promise<boolean>;
   
   // Chunk management
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
@@ -40,6 +42,23 @@ export class DatabaseStorage implements IStorage {
 
   async getDocumentsByStatus(status: string): Promise<Document[]> {
     return await db.select().from(documents).where(eq(documents.status, status));
+  }
+
+  async getAllDocuments(): Promise<Document[]> {
+    return await db.select().from(documents);
+  }
+
+  async deleteDocument(id: number): Promise<boolean> {
+    try {
+      // First delete all chunks for this document
+      await db.delete(documentChunks).where(eq(documentChunks.documentId, id));
+      
+      // Then delete the document
+      const result = await db.delete(documents).where(eq(documents.id, id));
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {

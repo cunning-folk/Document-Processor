@@ -55,6 +55,7 @@ function Router() {
         <Switch>
           <Route path="/" component={DocumentProcessor} />
           <Route path="/history" component={DocumentHistory} />
+          <Route path="/document-history" component={DocumentHistory} />
           <Route component={NotFound} />
         </Switch>
       </main>

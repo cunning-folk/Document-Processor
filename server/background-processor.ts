@@ -93,16 +93,25 @@ export class BackgroundProcessor {
         assistant_id: document.assistantId
       });
 
-      // Poll for completion
+      // Poll for completion with timeout
       let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
         thread_id: thread.id
       });
       
+      const maxWaitTime = 5 * 60 * 1000; // 5 minutes timeout
+      const startTime = Date.now();
+      
       while (runStatus.status === "queued" || runStatus.status === "in_progress") {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (Date.now() - startTime > maxWaitTime) {
+          throw new Error(`OpenAI assistant timeout after 5 minutes for chunk ${chunk.chunkIndex + 1}`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
         runStatus = await openai.beta.threads.runs.retrieve(run.id, {
           thread_id: thread.id
         });
+        
+        log(`Waiting for assistant... Status: ${runStatus.status}`, "background-processor");
       }
 
       if (runStatus.status === "completed") {

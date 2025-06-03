@@ -75,71 +75,93 @@ export class BackgroundProcessor {
         ? `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. This is part ${chunk.chunkIndex + 1} of ${totalChunks} from a larger document. Here is the text:\n\n${chunk.content}`
         : `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. Here is the text:\n\n${chunk.content}`;
 
-      // Create a thread
-      const thread = await openai.beta.threads.create();
-      
-      if (!thread || !thread.id) {
-        throw new Error(`Failed to create thread for chunk ${chunk.chunkIndex + 1}`);
-      }
+      let processedContent: string;
 
-      // Add message to thread
-      await openai.beta.threads.messages.create(thread.id, {
-        role: "user",
-        content: chunkPrompt
-      });
+      try {
+        // Try direct chat completion first (faster)
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a document formatting assistant. You clean messy text (often from PDFs) by: fixing line breaks in the middle of sentences, removing hyphens at line ends and joining words, restoring paragraphs, applying clean markdown (e.g., ## for section headers, * for bullets). Always output valid markdown. Do not destroy text."
+            },
+            {
+              role: "user",
+              content: chunkPrompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 4000
+        });
 
-      // Run the assistant
-      const run = await openai.beta.threads.runs.create(thread.id, {
-        assistant_id: document.assistantId
-      });
+        processedContent = response.choices[0].message.content || chunk.content;
+        log(`Completed chunk ${chunk.chunkIndex + 1} using direct API for document ${document.id}`, "background-processor");
 
-      // Poll for completion with timeout
-      let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
-        thread_id: thread.id
-      });
-      
-      const maxWaitTime = 5 * 60 * 1000; // 5 minutes timeout
-      const startTime = Date.now();
-      
-      while (runStatus.status === "queued" || runStatus.status === "in_progress") {
-        if (Date.now() - startTime > maxWaitTime) {
-          throw new Error(`OpenAI assistant timeout after 5 minutes for chunk ${chunk.chunkIndex + 1}`);
-        }
+      } catch (directApiError) {
+        log(`Direct API failed, trying assistant for chunk ${chunk.chunkIndex + 1}: ${directApiError}`, "background-processor");
         
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        runStatus = await openai.beta.threads.runs.retrieve(run.id, {
+        // Fallback to assistant if direct API fails
+        const thread = await openai.beta.threads.create();
+        
+        if (!thread || !thread.id) {
+          throw new Error(`Failed to create thread for chunk ${chunk.chunkIndex + 1}`);
+        }
+
+        await openai.beta.threads.messages.create(thread.id, {
+          role: "user",
+          content: chunkPrompt
+        });
+
+        const run = await openai.beta.threads.runs.create(thread.id, {
+          assistant_id: document.assistantId
+        });
+
+        let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
           thread_id: thread.id
         });
         
-        log(`Waiting for assistant... Status: ${runStatus.status}`, "background-processor");
+        const maxWaitTime = 2 * 60 * 1000;
+        const startTime = Date.now();
+        
+        while (runStatus.status === "queued" || runStatus.status === "in_progress") {
+          if (Date.now() - startTime > maxWaitTime) {
+            throw new Error(`OpenAI assistant timeout after 2 minutes for chunk ${chunk.chunkIndex + 1}`);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          runStatus = await openai.beta.threads.runs.retrieve(run.id, {
+            thread_id: thread.id
+          });
+          
+          log(`Waiting for assistant... Status: ${runStatus.status}`, "background-processor");
+        }
+
+        if (runStatus.status === "completed") {
+          const messages = await openai.beta.threads.messages.list(thread.id);
+          const assistantMessage = messages.data.find(m => m.role === "assistant");
+          
+          if (assistantMessage && assistantMessage.content[0].type === "text") {
+            processedContent = assistantMessage.content[0].text.value;
+            log(`Completed chunk ${chunk.chunkIndex + 1} using assistant for document ${document.id}`, "background-processor");
+          } else {
+            throw new Error(`No valid response from assistant for chunk ${chunk.chunkIndex + 1}`);
+          }
+        } else {
+          throw new Error(`Assistant run failed with status: ${runStatus.status} for chunk ${chunk.chunkIndex + 1}`);
+        }
       }
 
-      if (runStatus.status === "completed") {
-        // Get the assistant's response
-        const messages = await openai.beta.threads.messages.list(thread.id);
-        const assistantMessage = messages.data.find(m => m.role === "assistant");
-        
-        if (assistantMessage && assistantMessage.content[0].type === "text") {
-          const processedContent = assistantMessage.content[0].text.value;
-          
-          await storage.updateDocumentChunk(chunk.id, {
-            processedContent,
-            status: 'completed'
-          });
-          
-          // Update document processed chunks count
-          const currentDoc = await storage.getDocument(document.id);
-          await storage.updateDocument(document.id, {
-            processedChunks: (currentDoc?.processedChunks || 0) + 1
-          });
-          
-          log(`Completed chunk ${chunk.chunkIndex + 1} for document ${document.id}`, "background-processor");
-        } else {
-          throw new Error(`No valid response from assistant for chunk ${chunk.chunkIndex + 1}`);
-        }
-      } else {
-        throw new Error(`Assistant run failed with status: ${runStatus.status} for chunk ${chunk.chunkIndex + 1}`);
-      }
+      await storage.updateDocumentChunk(chunk.id, {
+        processedContent,
+        status: 'completed'
+      });
+      
+      // Update document processed chunks count
+      const currentDoc = await storage.getDocument(document.id);
+      await storage.updateDocument(document.id, {
+        processedChunks: (currentDoc?.processedChunks || 0) + 1
+      });
       
     } catch (error: any) {
       log(`Error processing chunk ${chunk.chunkIndex + 1}: ${error.message}`, "background-processor");

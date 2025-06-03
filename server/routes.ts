@@ -55,7 +55,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Chunk the document and create chunk records
-      const maxChunkSize = 250000;
+      const maxChunkSize = 50000; // Reduced from 250k to 50k for faster processing
       const chunks = [];
       
       if (extractedText.length > maxChunkSize) {

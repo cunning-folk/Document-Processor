@@ -1,9 +1,15 @@
-import fs from 'fs';
-import { promisify } from 'util';
-import { exec } from 'child_process';
-import * as pdfParse from 'pdf-parse';
 import pdf2pic from 'pdf2pic';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { createWorker } from 'tesseract.js';
+import path from 'path';
+import fs from 'fs';
 import { log } from './vite';
+import { createRequire } from 'module';
+
+// Use createRequire for pdf-parse to handle the library properly
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 interface PDFProcessingResult {
   text: string;
@@ -15,25 +21,14 @@ export class PDFProcessor {
   private ocrWorker: any = null;
 
   async initializePdfParse() {
-    try {
-      // PDF parsing is already imported, just ensure it's available
-      log('PDF parsing library ready', 'pdf-processor');
-    } catch (error: any) {
-      log(`Failed to initialize PDF parsing: ${error.message}`, 'pdf-processor');
-      throw new Error('PDF processing initialization failed');
-    }
+    // pdf-parse is now imported at module level
+    log('PDF parsing library ready', 'pdf-processor');
   }
 
   async initializeOCR() {
-    if (this.ocrWorker) return;
-
-    try {
-      const { createWorker } = await import('tesseract.js');
+    if (!this.ocrWorker) {
       this.ocrWorker = await createWorker('eng');
       log('OCR worker initialized', 'pdf-processor');
-    } catch (error: any) {
-      log(`Failed to initialize OCR: ${error.message}`, 'pdf-processor');
-      throw new Error('OCR initialization failed');
     }
   }
 
@@ -209,6 +204,141 @@ export class PDFProcessor {
         log(`pdf2pic conversion failed: ${pdf2picError.message}`, 'pdf-processor');
       }
 
+      // Method 2: Try direct ImageMagick with safer options if pdf2pic failed
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting direct ImageMagick conversion with safe options', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              // Use safer ImageMagick options that bypass problematic PDF structures
+              await execAsync(`convert -limit memory 256MiB -limit map 512MiB -density 150 "${tempPdfPath}[${pageNum}]" -flatten -background white -alpha remove "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using ImageMagick`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`ImageMagick safe mode failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break; // Stop if conversion fails
+            }
+          }
+        } catch (imageMagickError: any) {
+          log(`ImageMagick conversion failed: ${imageMagickError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Method 2b: Try ImageMagick with different Ghostscript options
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting ImageMagick with custom Ghostscript settings', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/page_gs_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              // Use custom Ghostscript parameters for better compatibility
+              await execAsync(`convert -define pdf:use-cropbox=true -define pdf:fit-page=true -density 150 "${tempPdfPath}[${pageNum}]" "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using custom GS settings`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`Custom GS settings failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gsError: any) {
+          log(`Custom Ghostscript method failed: ${gsError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Method 3: Try direct Ghostscript with error recovery
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting direct Ghostscript conversion with error recovery', 'pdf-processor');
+          
+          for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/gs_page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              // Direct Ghostscript command with error recovery options
+              await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dFirstPage=${pageNum} -dLastPage=${pageNum} -sDEVICE=png16m -r150 -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -sOutputFile="${outputPath}" "${tempPdfPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum} using direct Ghostscript`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`Direct Ghostscript failed for page ${pageNum}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gsDirectError: any) {
+          log(`Direct Ghostscript conversion failed: ${gsDirectError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Method 4: Try GraphicsMagick as final fallback
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting GraphicsMagick conversion as final fallback', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/gm_page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              await execAsync(`gm convert "${tempPdfPath}[${pageNum}]" -density 150 "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using GraphicsMagick`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`GraphicsMagick failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gmError: any) {
+          log(`GraphicsMagick conversion failed: ${gmError.message}`, 'pdf-processor');
+        }
+      }
+
       // Clean up temporary PDF file
       try {
         fs.unlinkSync(tempPdfPath);
@@ -247,39 +377,45 @@ export class PDFProcessor {
         log(`Attempting advanced PDF reconstruction for ${filename}`, 'pdf-processor');
         
         // First pass: Remove encryption and flatten structure
-        const gsCommand = `gs -dNOPAUSE -dBATCH -dSAFER -dNOOUTERSAVE \\
-          -sDEVICE=pdfwrite \\
-          -dCompatibilityLevel=1.7 \\
-          -dPDFSETTINGS=/default \\
-          -dEmbedAllFonts=true \\
-          -dSubsetFonts=true \\
-          -dOptimize=true \\
-          -dUseCIEColor=true \\
-          -dDetectDuplicateImages=true \\
-          -dCompressFonts=true \\
-          -dNOTRANSPARENCY \\
-          -sOutputFile="${tempOutputPath}" \\
+        const gsCommand = `gs -dNOPAUSE -dBATCH -dSAFER -dNOOUTERSAVE \
+          -sDEVICE=pdfwrite \
+          -dCompatibilityLevel=1.7 \
+          -dPDFSETTINGS=/default \
+          -dEmbedAllFonts=true \
+          -dSubsetFonts=true \
+          -dOptimize=true \
+          -dUseCIEColor=true \
+          -dDetectDuplicateImages=true \
+          -dCompressFonts=true \
+          -dNOTRANSPARENCY \
+          -sOutputFile="${tempOutputPath}" \
           "${tempInputPath}" 2>/dev/null`;
         
         await execAsync(gsCommand);
         
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           // Second pass: Further cleanup and optimization
-          const cleanCommand = `gs -dNOPAUSE -dBATCH -dSAFER \\
-            -sDEVICE=pdfwrite \\
-            -dCompatibilityLevel=1.4 \\
-            -dPDFSETTINGS=/ebook \\
-            -dDetectDuplicateImages=true \\
-            -dCompressFonts=true \\
-            -dNOTRANSPARENCY \\
-            -sOutputFile="${tempCleanPath}" \\
+          const cleanCommand = `gs -dNOPAUSE -dBATCH -dSAFER \
+            -sDEVICE=pdfwrite \
+            -dCompatibilityLevel=1.4 \
+            -dPDFSETTINGS=/ebook \
+            -dDetectDuplicateImages=true \
+            -dCompressFonts=true \
+            -dNOTRANSPARENCY \
+            -sOutputFile="${tempCleanPath}" \
             "${tempOutputPath}" 2>/dev/null`;
           
           await execAsync(cleanCommand);
           
           if (fs.existsSync(tempCleanPath) && fs.statSync(tempCleanPath).size > 0) {
             const normalizedBuffer = fs.readFileSync(tempCleanPath);
-            this.cleanupFiles([tempInputPath, tempOutputPath, tempCleanPath]);
+            try {
+              fs.unlinkSync(tempInputPath);
+              fs.unlinkSync(tempOutputPath);
+              fs.unlinkSync(tempCleanPath);
+            } catch (cleanupError) {
+              // Ignore cleanup errors
+            }
             log(`Advanced PDF reconstruction successful for ${filename}`, 'pdf-processor');
             return normalizedBuffer;
           }
@@ -295,7 +431,13 @@ export class PDFProcessor {
         
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           const normalizedBuffer = fs.readFileSync(tempOutputPath);
-          this.cleanupFiles([tempInputPath, tempOutputPath, tempCleanPath]);
+          try {
+            if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+            if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+            if (fs.existsSync(tempCleanPath)) fs.unlinkSync(tempCleanPath);
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
           log(`Simple PDF flattening successful for ${filename}`, 'pdf-processor');
           return normalizedBuffer;
         }
@@ -311,35 +453,45 @@ export class PDFProcessor {
         
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           const normalizedBuffer = fs.readFileSync(tempOutputPath);
-          this.cleanupFiles([tempInputPath, tempOutputPath, tempCleanPath]);
-          log(`qpdf decrypt and repair successful for ${filename}`, 'pdf-processor');
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          log(`PDF normalization successful via qpdf for ${filename}`, 'pdf-processor');
           return normalizedBuffer;
         }
       } catch (qpdfError: any) {
-        log(`qpdf decrypt and repair failed: ${qpdfError.message}`, 'pdf-processor');
+        log(`qpdf normalization failed: ${qpdfError.message}`, 'pdf-processor');
       }
       
-      // Final cleanup
-      this.cleanupFiles([tempInputPath, tempOutputPath, tempCleanPath]);
+      // Method 3: Use pdftk for PDF reconstruction
+      try {
+        log(`Attempting PDF normalization via pdftk for ${filename}`, 'pdf-processor');
+        await execAsync(`pdftk "${tempInputPath}" output "${tempOutputPath}" compress`);
+        
+        if (fs.existsSync(tempOutputPath)) {
+          const normalizedBuffer = fs.readFileSync(tempOutputPath);
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          log(`PDF normalization successful via pdftk for ${filename}`, 'pdf-processor');
+          return normalizedBuffer;
+        }
+      } catch (pdftkError: any) {
+        log(`pdftk normalization failed: ${pdftkError.message}`, 'pdf-processor');
+      }
+      
+      // Clean up input file
+      try {
+        fs.unlinkSync(tempInputPath);
+      } catch (cleanupError: any) {
+        log(`Failed to clean up temp input file: ${cleanupError.message}`, 'pdf-processor');
+      }
+      
       log(`All PDF normalization methods failed for ${filename}`, 'pdf-processor');
       return null;
       
     } catch (error: any) {
-      log(`PDF normalization completely failed: ${error.message}`, 'pdf-processor');
+      log(`PDF normalization error for ${filename}: ${error.message}`, 'pdf-processor');
       return null;
     }
-  }
-
-  private cleanupFiles(filePaths: string[]): void {
-    filePaths.forEach(path => {
-      try {
-        if (fs.existsSync(path)) {
-          fs.unlinkSync(path);
-        }
-      } catch (err) {
-        // Ignore cleanup errors
-      }
-    });
   }
 
   async cleanup() {
@@ -347,6 +499,7 @@ export class PDFProcessor {
   }
 }
 
+// Global instance
 export const pdfProcessor = new PDFProcessor();
 
 // Cleanup on process exit
@@ -356,10 +509,10 @@ process.on('exit', () => {
 
 process.on('SIGINT', () => {
   pdfProcessor.cleanup();
-  process.exit();
+  process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   pdfProcessor.cleanup();
-  process.exit();
+  process.exit(0);
 });

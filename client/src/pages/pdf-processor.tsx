@@ -2,17 +2,20 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
+import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Copy, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function PDFProcessor() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
   const { toast } = useToast();
 
   const processMutation = useMutation({
     mutationFn: async (file: File) => {
+      setIsPolling(false);
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('assistantId', 'asst_OqSPqevzweqfm85VGKcJuNPF');
@@ -28,19 +31,31 @@ export default function PDFProcessor() {
       }
 
       const data = await response.json();
+      setIsPolling(true);
       
-      // Poll for completion
-      const pollResult = async (id: number): Promise<any> => {
+      // Poll for completion with better UX
+      const pollResult = async (id: number, attempt = 1): Promise<any> => {
         const pollResponse = await fetch(`/api/documents/${id}`);
         const doc = await pollResponse.json();
         
         if (doc.status === 'completed') {
+          setIsPolling(false);
           return doc;
         } else if (doc.status === 'failed') {
+          setIsPolling(false);
           throw new Error(doc.errorMessage || 'Processing failed');
         } else {
+          // Show progress if available
+          if (doc.totalChunks && doc.processedChunks) {
+            const progress = Math.round((doc.processedChunks / doc.totalChunks) * 100);
+            toast({
+              title: "Processing...",
+              description: `Progress: ${progress}% (${doc.processedChunks}/${doc.totalChunks} chunks)`,
+            });
+          }
+          
           await new Promise(resolve => setTimeout(resolve, 2000));
-          return pollResult(id);
+          return pollResult(id, attempt + 1);
         }
       };
 
@@ -116,31 +131,35 @@ export default function PDFProcessor() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-slate-800 mb-3">
-          Document Processor
-        </h1>
-        <p className="text-gray-600 max-w-2xl mx-auto">
-          Upload your PDF, TXT, or MD file and get clean, formatted text output powered by AI.
-        </p>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="container mx-auto px-4 py-12 max-w-5xl">
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-6">
+            <FileText className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+            Document Processor
+          </h1>
+          <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            Transform your documents with AI-powered formatting. Upload PDF, TXT, or MD files and get beautifully structured content.
+          </p>
+        </div>
 
-      {/* Upload Area */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragActive 
-                ? 'border-blue-400 bg-blue-50' 
-                : 'border-gray-300 hover:border-gray-400'
-            }`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            {selectedFile ? (
+        {/* Upload Area */}
+        <Card className="mb-8 shadow-xl border-0 overflow-hidden">
+          <CardContent className="pt-8">
+            <div
+              className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
+                dragActive 
+                  ? 'border-blue-400 bg-blue-50 scale-105' 
+                  : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              {selectedFile ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-center">
                   <FileText className="h-12 w-12 text-green-500" />
@@ -265,7 +284,8 @@ export default function PDFProcessor() {
             </div>
           </CardContent>
         </Card>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -72,9 +72,10 @@ export class PDFProcessor {
       }
       
       // Check for encryption markers early
-      const hasEncryptionMarkers = bufferString.includes('U2FsdGVkX1') || 
-                                  bufferString.includes('/Encrypt') ||
-                                  bufferString.includes('encrypted');
+      const fullBufferString = buffer.toString('binary');
+      const hasEncryptionMarkers = fullBufferString.includes('U2FsdGVkX1') || 
+                                  fullBufferString.includes('/Encrypt') ||
+                                  fullBufferString.includes('encrypted');
       
       await this.initializePdfParse();
       

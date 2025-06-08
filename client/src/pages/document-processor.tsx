@@ -108,14 +108,14 @@ export default function DocumentProcessor() {
       // Show more helpful error messages for common issues
       if (errorMessage.includes('encrypted during upload')) {
         toast({
-          title: "Upload Issue Detected",
-          description: "Your file is being encrypted during upload. Try disabling browser extensions or use incognito mode.",
+          title: "Upload Encryption Detected",
+          description: errorMessage.replace('This file appears to be encrypted during upload. This usually happens due to browser extensions or security software. Please try:', 'Try these solutions:'),
           variant: "destructive",
         });
       } else if (errorMessage.includes('Unable to detect PDF format')) {
         toast({
           title: "Invalid PDF File",
-          description: "Please try the test PDF below to verify your setup is working correctly.",
+          description: errorMessage,
           variant: "destructive",
         });
       } else {

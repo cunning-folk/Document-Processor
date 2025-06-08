@@ -165,6 +165,10 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
               disabled ? 'text-gray-400' : 'text-slate-500'
             }`}>
               Supports TXT, Markdown, and PDF files up to 50MB
+              <br />
+              <span className="text-xs text-slate-400">
+                PDF processing includes text extraction and OCR for scanned documents
+              </span>
             </p>
           </div>
           

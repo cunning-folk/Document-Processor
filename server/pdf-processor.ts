@@ -17,12 +17,12 @@ export class PDFProcessor {
   async initializePdfParse() {
     if (!this.pdfParse) {
       try {
-        // Use dynamic import for pdf-parse
-        const pdfParseModule = await import('pdf-parse');
-        this.pdfParse = pdfParseModule.default || pdfParseModule;
+        // Use a simple require approach that avoids the test file issue
+        const pdfParse = eval('require')('pdf-parse');
+        this.pdfParse = pdfParse;
         log('PDF parsing library initialized successfully', 'pdf-processor');
       } catch (error: any) {
-        log(`Failed to import pdf-parse: ${error.message}`, 'pdf-processor');
+        log(`PDF text extraction unavailable, using OCR-only mode: ${error.message}`, 'pdf-processor');
         // Allow OCR-only processing if pdf-parse fails
         this.pdfParse = null;
       }

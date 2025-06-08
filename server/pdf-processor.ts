@@ -1,7 +1,6 @@
 import fs from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import * as pdfParse from 'pdf-parse';
 import pdf2pic from 'pdf2pic';
 import { log } from './vite';
 
@@ -13,10 +12,10 @@ interface PDFProcessingResult {
 
 export class PDFProcessor {
   private ocrWorker: any = null;
+  private pdfParse: any = null;
 
   async initializePdfParse() {
     try {
-      // PDF parsing is already imported, just ensure it's available
       log('PDF parsing library ready', 'pdf-processor');
     } catch (error: any) {
       log(`Failed to initialize PDF parsing: ${error.message}`, 'pdf-processor');
@@ -151,11 +150,47 @@ export class PDFProcessor {
   }
 
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
-    const data = await pdfParse(buffer);
-    return {
-      text: data.text,
-      totalPages: data.numpages
-    };
+    const execAsync = promisify(exec);
+    
+    try {
+      // Use pdftotext command-line tool as alternative to broken pdf-parse library
+      const tempPdfPath = `/tmp/extract_${Date.now()}.pdf`;
+      const tempTextPath = `/tmp/extract_${Date.now()}.txt`;
+      
+      fs.writeFileSync(tempPdfPath, buffer);
+      
+      // Extract text using pdftotext
+      await execAsync(`pdftotext "${tempPdfPath}" "${tempTextPath}"`);
+      
+      if (fs.existsSync(tempTextPath)) {
+        const extractedText = fs.readFileSync(tempTextPath, 'utf8');
+        
+        // Get page count using pdfinfo
+        let pageCount = 1;
+        try {
+          const infoResult = await execAsync(`pdfinfo "${tempPdfPath}"`);
+          const pageMatch = infoResult.stdout.match(/Pages:\s*(\d+)/);
+          if (pageMatch) {
+            pageCount = parseInt(pageMatch[1], 10);
+          }
+        } catch (infoError) {
+          // Page count detection failed, use default
+        }
+        
+        // Cleanup
+        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
+        if (fs.existsSync(tempTextPath)) fs.unlinkSync(tempTextPath);
+        
+        return {
+          text: extractedText,
+          totalPages: pageCount
+        };
+      } else {
+        throw new Error('Text extraction failed - no output file generated');
+      }
+    } catch (error: any) {
+      throw new Error(`PDF text extraction failed: ${error.message}`);
+    }
   }
 
   private async extractTextWithOCR(buffer: Buffer, filename: string): Promise<{ text: string; totalPages: number }> {

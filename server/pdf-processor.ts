@@ -17,15 +17,14 @@ export class PDFProcessor {
   async initializePdfParse() {
     if (!this.pdfParse) {
       try {
-        // Use dynamic import with createRequire for better compatibility
-        const { createRequire } = await import('module');
-        const require = createRequire(import.meta.url);
-        this.pdfParse = require('pdf-parse');
+        // Use dynamic import for pdf-parse
+        const pdfParseModule = await import('pdf-parse');
+        this.pdfParse = pdfParseModule.default || pdfParseModule;
         log('PDF parsing library initialized successfully', 'pdf-processor');
       } catch (error: any) {
         log(`Failed to import pdf-parse: ${error.message}`, 'pdf-processor');
-        // Fallback to treating PDF as unsupported for now
-        throw new Error('PDF processing temporarily unavailable');
+        // Allow OCR-only processing if pdf-parse fails
+        this.pdfParse = null;
       }
     }
   }
@@ -49,32 +48,39 @@ export class PDFProcessor {
     try {
       await this.initializePdfParse();
       
-      // First, try text extraction
-      const textResult = await this.extractTextFromPDF(buffer);
-      
-      // If we got substantial text, use it
-      if (textResult.text.trim().length > 100) {
-        log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
-        return {
-          text: textResult.text,
-          totalPages: textResult.totalPages,
-          method: 'text-extraction'
-        };
+      // First, try text extraction if pdf-parse is available
+      let textResult = null;
+      if (this.pdfParse) {
+        try {
+          textResult = await this.extractTextFromPDF(buffer);
+          
+          // If we got substantial text, use it
+          if (textResult.text.trim().length > 50) {
+            log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
+            return {
+              text: textResult.text,
+              totalPages: textResult.totalPages,
+              method: 'text-extraction'
+            };
+          }
+        } catch (textError: any) {
+          log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
+        }
       }
 
-      // If text extraction yielded little content, try OCR
-      log(`PDF appears to be image-based, using OCR for ${filename}`, 'pdf-processor');
+      // If text extraction failed or yielded little content, try OCR
+      log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
       const ocrResult = await this.extractTextWithOCR(buffer, filename);
       
       return {
         text: ocrResult.text,
         totalPages: ocrResult.totalPages,
-        method: textResult.text.trim().length > 0 ? 'hybrid' : 'ocr'
+        method: textResult && textResult.text.trim().length > 0 ? 'hybrid' : 'ocr'
       };
 
     } catch (error: any) {
-      log(`PDF processing failed for ${filename}: ${error.message}`, 'pdf-processor');
-      throw new Error(`Failed to process PDF: ${error.message}`);
+      log(`PDF processing completely failed for ${filename}: ${error.message}`, 'pdf-processor');
+      throw new Error(`Unable to process PDF file. The file may be corrupted, password-protected, or in an unsupported format.`);
     }
   }
 
@@ -100,14 +106,25 @@ export class PDFProcessor {
         height: 2000
       });
 
-      // Get PDF info to know page count
-      const pdfData = await this.pdfParse(buffer);
-      const totalPages = pdfData.numpages;
+      // Try to get PDF info to know page count, fallback if it fails
+      let totalPages = 1;
+      try {
+        if (this.pdfParse) {
+          const pdfData = await this.pdfParse(buffer);
+          totalPages = pdfData.numpages || 1;
+        }
+      } catch (pageCountError: any) {
+        log(`Could not determine page count, will process up to 5 pages: ${pageCountError.message}`, 'pdf-processor');
+        totalPages = 5; // Fallback to processing up to 5 pages
+      }
       
       const extractedTexts: string[] = [];
 
       // Process each page
-      for (let pageNum = 1; pageNum <= Math.min(totalPages, 20); pageNum++) { // Limit to 20 pages for performance
+      const maxPages = Math.min(totalPages, 5); // Limit to 5 pages for performance
+      let successfulPages = 0;
+      
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         try {
           log(`Processing page ${pageNum}/${totalPages} for ${filename}`, 'pdf-processor');
           
@@ -116,7 +133,10 @@ export class PDFProcessor {
           if (image.path) {
             // Perform OCR on the image
             const { data: { text } } = await this.ocrWorker.recognize(image.path);
-            extractedTexts.push(text);
+            if (text.trim().length > 0) {
+              extractedTexts.push(text.trim());
+              successfulPages++;
+            }
             
             // Clean up temporary image file
             try {
@@ -127,13 +147,21 @@ export class PDFProcessor {
           }
         } catch (pageError: any) {
           log(`Failed to process page ${pageNum}: ${pageError.message}`, 'pdf-processor');
-          extractedTexts.push(`[Page ${pageNum} processing failed]`);
+          // Don't add error text, just continue to next page
+          if (pageNum > 2 && successfulPages === 0) {
+            // If we've failed on multiple pages with no success, stop trying
+            break;
+          }
         }
+      }
+
+      if (extractedTexts.length === 0) {
+        throw new Error('No text could be extracted from PDF pages');
       }
 
       return {
         text: extractedTexts.join('\n\n'),
-        totalPages
+        totalPages: successfulPages
       };
 
     } catch (error: any) {

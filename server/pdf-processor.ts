@@ -41,40 +41,60 @@ export class PDFProcessor {
   }
 
   async processPDF(buffer: Buffer, filename: string): Promise<PDFProcessingResult> {
+    log(`Processing PDF file: ${filename}`, 'pdf-processor');
+    
     try {
       await this.initializePdfParse();
       
-      // First, try text extraction
-      let textResult = null;
+      // First, try text extraction - this should work for most PDFs
       try {
-        textResult = await this.extractTextFromPDF(buffer);
+        const textResult = await this.extractTextFromPDF(buffer);
         
-        // If we got substantial text, use it
-        if (textResult.text.trim().length > 50) {
+        // If we got substantial text, use it (lower threshold for better success rate)
+        if (textResult.text.trim().length > 10) {
           log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
           return {
             text: textResult.text,
             totalPages: textResult.totalPages,
             method: 'text-extraction'
           };
+        } else {
+          log(`PDF text extraction yielded minimal content for ${filename}`, 'pdf-processor');
         }
       } catch (textError: any) {
         log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
+        
+        // Check for encryption/protection indicators
+        const errorMessage = textError.message.toLowerCase();
+        if (errorMessage.includes('encrypted') || errorMessage.includes('password') || errorMessage.includes('protected')) {
+          throw new Error('This PDF appears to be password-protected or encrypted. Please provide an unprotected version of the document.');
+        }
       }
 
-      // If text extraction failed or yielded little content, try OCR
+      // Only attempt OCR if text extraction completely failed
       log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
       const ocrResult = await this.extractTextWithOCR(buffer, filename);
       
       return {
         text: ocrResult.text,
         totalPages: ocrResult.totalPages,
-        method: textResult && textResult.text.trim().length > 0 ? 'hybrid' : 'ocr'
+        method: 'ocr'
       };
 
     } catch (error: any) {
-      log(`PDF processing completely failed for ${filename}: ${error.message}`, 'pdf-processor');
-      throw new Error(`Unable to process PDF file. The file may be corrupted, password-protected, or in an unsupported format.`);
+      const errorMessage = error.message.toLowerCase();
+      
+      // Provide specific error messages for different failure types
+      if (errorMessage.includes('u2fsdgvkx1') || errorMessage.includes('salted') || errorMessage.includes('encrypted')) {
+        log(`PDF contains encrypted content: ${filename}`, 'pdf-processor');
+        throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
+      } else if (errorMessage.includes('undefined in') && errorMessage.includes('u2fsdgvkx1')) {
+        log(`PDF has encryption markers: ${filename}`, 'pdf-processor');
+        throw new Error('This PDF has encryption or protection that prevents processing. Please try a different PDF or remove protection.');
+      } else {
+        log(`PDF processing completely failed for ${filename}: ${error.message}`, 'pdf-processor');
+        throw new Error('Unable to process PDF file. The file may be corrupted, password-protected, or in an unsupported format.');
+      }
     }
   }
 

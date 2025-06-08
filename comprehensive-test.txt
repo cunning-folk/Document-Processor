@@ -1,0 +1,17 @@
+Comprehensive Document Processing Test
+
+Introduction
+This document tests the document processing system's ability to handle various content types and format them appropriately.
+
+Sample Content
+This is paragraph 1 with substantial content that should be properly extracted and processed by the OpenAI Assistant API. The system should format this into clean markdown output.
+
+This is paragraph 2 demonstrating the system's capability to handle multiple paragraphs and maintain proper formatting throughout the processing pipeline.
+
+This is paragraph 3 showing how the system processes longer blocks of text and ensures all content is captured and formatted correctly.
+
+Technical Processing Notes
+The document processing system supports multiple file formats including PDF, TXT, and MD files. It uses advanced text extraction and formatting capabilities to ensure clean, readable output.
+
+Conclusion
+This test document validates the comprehensive processing capabilities of the document formatting system.

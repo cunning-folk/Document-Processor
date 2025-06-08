@@ -1,8 +1,47 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom Fonts */
+@font-face {
+  font-family: 'GT-Alpina';
+  src: url('@assets/GT-Alpina-Standard-Medium_1749418963950.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT-America';
+  src: url('@assets/GT-America-Standard-Regular_1749418982384.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT-America';
+  src: url('@assets/GT-America-Standard-Medium_1749418982384.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT-America';
+  src: url('@assets/GT-America-Standard-Bold_1749418982384.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT-America-Mono';
+  src: url('@assets/GT-America-Mono-Regular_1749418982384.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Custom drag and drop animations */
 @keyframes float {

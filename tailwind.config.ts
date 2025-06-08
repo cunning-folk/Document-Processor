@@ -6,9 +6,10 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['Playfair Display', 'serif'],
-        body: ['Inter', 'sans-serif'],
-        sans: ['Inter', 'sans-serif'],
+        display: ['GT-Alpina', 'serif'],
+        body: ['GT-America', 'sans-serif'],
+        sans: ['GT-America', 'sans-serif'],
+        mono: ['GT-America-Mono', 'monospace'],
       },
       borderRadius: {
         lg: "var(--radius)",

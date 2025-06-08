@@ -265,10 +265,10 @@ export default function DocumentUpload() {
                     </div>
                   </div>
                   <div>
-                    <p className={`text-2xl font-semibold mb-3 transition-all duration-300 ${dragActive ? 'text-blue-600 scale-105' : 'text-gray-900'}`}>
+                    <p className={`text-lg font-body font-medium mb-2 transition-all duration-300 ${dragActive ? 'text-blue-600 scale-105' : 'text-gray-900'}`}>
                       {dragActive ? 'Release to upload' : 'Drop your document here'}
                     </p>
-                    <p className={`mb-6 transition-colors duration-300 ${dragActive ? 'text-blue-500' : 'text-gray-500'}`}>
+                    <p className={`text-sm font-body mb-4 transition-colors duration-300 ${dragActive ? 'text-blue-500' : 'text-gray-500'}`}>
                       or click to browse files
                     </p>
                     <input
@@ -281,15 +281,15 @@ export default function DocumentUpload() {
                     <label htmlFor="file-upload">
                       <Button 
                         variant="outline" 
-                        size="lg" 
+                        size="default" 
                         asChild
-                        className={`transition-all duration-300 hover:scale-105 hover:shadow-md ${dragActive ? 'border-blue-400 text-blue-600 bg-blue-50' : ''}`}
+                        className={`text-sm font-body transition-all duration-300 hover:scale-105 hover:shadow-md ${dragActive ? 'border-blue-400 text-blue-600 bg-blue-50' : ''}`}
                       >
                         <span>Choose File</span>
                       </Button>
                     </label>
                   </div>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-xs font-body text-gray-400">
                     Supports PDF, TXT, and MD files up to 50MB
                   </p>
                 </div>
@@ -300,28 +300,28 @@ export default function DocumentUpload() {
 
         {/* Troubleshooting */}
         <Card className="mb-8 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-lg">
-          <CardContent className="pt-6">
-            <div className="flex items-start space-x-4">
-              <AlertCircle className="h-6 w-6 text-amber-600 mt-1 flex-shrink-0" />
+          <CardContent className="pt-4">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-amber-900 mb-3 text-lg">
+                <h3 className="font-body font-medium text-amber-900 mb-2 text-sm">
                   Having upload issues?
                 </h3>
-                <div className="text-amber-800 space-y-2">
-                  <p className="flex items-center">
-                    <span className="w-2 h-2 bg-amber-600 rounded-full mr-3"></span>
+                <div className="text-amber-800 space-y-1">
+                  <p className="flex items-center text-xs font-body">
+                    <span className="w-1.5 h-1.5 bg-amber-600 rounded-full mr-2"></span>
                     Try using a different browser or incognito mode
                   </p>
-                  <p className="flex items-center">
-                    <span className="w-2 h-2 bg-amber-600 rounded-full mr-3"></span>
+                  <p className="flex items-center text-xs font-body">
+                    <span className="w-1.5 h-1.5 bg-amber-600 rounded-full mr-2"></span>
                     Temporarily disable browser extensions
                   </p>
-                  <p className="flex items-center">
-                    <span className="w-2 h-2 bg-amber-600 rounded-full mr-3"></span>
+                  <p className="flex items-center text-xs font-body">
+                    <span className="w-1.5 h-1.5 bg-amber-600 rounded-full mr-2"></span>
                     Check if the PDF is password-protected
                   </p>
-                  <p className="flex items-center">
-                    <span className="w-2 h-2 bg-amber-600 rounded-full mr-3"></span>
+                  <p className="flex items-center text-xs font-body">
+                    <span className="w-1.5 h-1.5 bg-amber-600 rounded-full mr-2"></span>
                     Try uploading from a different network
                   </p>
                 </div>
@@ -333,25 +333,26 @@ export default function DocumentUpload() {
         {/* Results */}
         {result && (
           <Card className="shadow-xl border-0">
-            <CardContent className="pt-8">
-              <div className="flex items-center mb-6">
-                <CheckCircle2 className="h-6 w-6 text-green-500 mr-3" />
-                <h2 className="text-2xl font-bold text-gray-900">
+            <CardContent className="pt-6">
+              <div className="flex items-center mb-4">
+                <CheckCircle2 className="h-5 w-5 text-green-500 mr-2" />
+                <h2 className="text-lg font-display font-medium text-gray-900">
                   Processed Content
                 </h2>
               </div>
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl max-h-96 overflow-y-auto border">
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-xl max-h-80 overflow-y-auto border">
+                <pre className="whitespace-pre-wrap text-xs text-gray-800 font-mono leading-relaxed">
                   {result}
                 </pre>
               </div>
-              <div className="flex gap-3 mt-6">
+              <div className="flex gap-3 mt-4">
                 <Button
                   variant="outline"
                   onClick={() => navigator.clipboard.writeText(result)}
-                  className="flex-1"
+                  className="flex-1 text-sm font-body"
+                  size="sm"
                 >
-                  <Copy className="mr-2 h-4 w-4" />
+                  <Copy className="mr-2 h-3 w-3" />
                   Copy to Clipboard
                 </Button>
                 <Button
@@ -365,9 +366,10 @@ export default function DocumentUpload() {
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="flex-1"
+                  className="flex-1 text-sm font-body"
+                  size="sm"
                 >
-                  <Download className="mr-2 h-4 w-4" />
+                  <Download className="mr-2 h-3 w-3" />
                   Download as Markdown
                 </Button>
               </div>

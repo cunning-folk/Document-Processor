@@ -189,7 +189,7 @@ export default function PDFProcessor() {
                   </p>
                   <input
                     type="file"
-                    accept=".pdf"
+                    accept=".pdf,.txt,.md"
                     onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                     className="hidden"
                     id="file-upload"
@@ -201,7 +201,7 @@ export default function PDFProcessor() {
                   </label>
                 </div>
                 <p className="text-xs text-gray-400">
-                  Supports PDF files up to 50MB
+                  Supports PDF, TXT, and MD files up to 50MB
                 </p>
               </div>
             )}

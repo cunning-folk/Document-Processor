@@ -71,7 +71,26 @@ export class PDFProcessor {
         }
       }
 
-      // Only attempt OCR if text extraction completely failed
+      // Try PDF normalization before OCR
+      log(`Attempting PDF normalization for ${filename}`, 'pdf-processor');
+      const normalizedBuffer = await this.normalizePDF(buffer, filename);
+      if (normalizedBuffer) {
+        try {
+          const normalizedResult = await this.extractTextFromPDF(normalizedBuffer);
+          if (normalizedResult.text.trim().length > 10) {
+            log(`PDF normalization and text extraction successful for ${filename}`, 'pdf-processor');
+            return {
+              text: normalizedResult.text,
+              totalPages: normalizedResult.totalPages,
+              method: 'text-extraction'
+            };
+          }
+        } catch (normalizedError: any) {
+          log(`Normalized PDF text extraction failed: ${normalizedError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Only attempt OCR if all other methods failed
       log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
       const ocrResult = await this.extractTextWithOCR(buffer, filename);
       
@@ -311,6 +330,80 @@ export class PDFProcessor {
 
     } catch (error: any) {
       throw new Error(`OCR processing failed: ${error.message}`);
+    }
+  }
+
+  private async normalizePDF(buffer: Buffer, filename: string): Promise<Buffer | null> {
+    const execAsync = promisify(exec);
+    
+    try {
+      // Save original PDF to temporary file
+      const tempInputPath = `/tmp/input_${Date.now()}.pdf`;
+      const tempOutputPath = `/tmp/normalized_${Date.now()}.pdf`;
+      
+      fs.writeFileSync(tempInputPath, buffer);
+      
+      // Method 1: Use Ghostscript to rebuild PDF to standard format
+      try {
+        log(`Attempting PDF normalization via Ghostscript for ${filename}`, 'pdf-processor');
+        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -sOutputFile="${tempOutputPath}" "${tempInputPath}"`);
+        
+        if (fs.existsSync(tempOutputPath)) {
+          const normalizedBuffer = fs.readFileSync(tempOutputPath);
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          log(`PDF normalization successful via Ghostscript for ${filename}`, 'pdf-processor');
+          return normalizedBuffer;
+        }
+      } catch (gsError: any) {
+        log(`Ghostscript normalization failed: ${gsError.message}`, 'pdf-processor');
+      }
+      
+      // Method 2: Use qpdf for PDF structure repair
+      try {
+        log(`Attempting PDF normalization via qpdf for ${filename}`, 'pdf-processor');
+        await execAsync(`qpdf --linearize --object-streams=preserve "${tempInputPath}" "${tempOutputPath}"`);
+        
+        if (fs.existsSync(tempOutputPath)) {
+          const normalizedBuffer = fs.readFileSync(tempOutputPath);
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          log(`PDF normalization successful via qpdf for ${filename}`, 'pdf-processor');
+          return normalizedBuffer;
+        }
+      } catch (qpdfError: any) {
+        log(`qpdf normalization failed: ${qpdfError.message}`, 'pdf-processor');
+      }
+      
+      // Method 3: Use pdftk for PDF reconstruction
+      try {
+        log(`Attempting PDF normalization via pdftk for ${filename}`, 'pdf-processor');
+        await execAsync(`pdftk "${tempInputPath}" output "${tempOutputPath}" compress`);
+        
+        if (fs.existsSync(tempOutputPath)) {
+          const normalizedBuffer = fs.readFileSync(tempOutputPath);
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          log(`PDF normalization successful via pdftk for ${filename}`, 'pdf-processor');
+          return normalizedBuffer;
+        }
+      } catch (pdftkError: any) {
+        log(`pdftk normalization failed: ${pdftkError.message}`, 'pdf-processor');
+      }
+      
+      // Clean up input file
+      try {
+        fs.unlinkSync(tempInputPath);
+      } catch (cleanupError: any) {
+        log(`Failed to clean up temp input file: ${cleanupError.message}`, 'pdf-processor');
+      }
+      
+      log(`All PDF normalization methods failed for ${filename}`, 'pdf-processor');
+      return null;
+      
+    } catch (error: any) {
+      log(`PDF normalization error for ${filename}: ${error.message}`, 'pdf-processor');
+      return null;
     }
   }
 

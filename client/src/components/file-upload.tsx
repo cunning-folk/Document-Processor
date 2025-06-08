@@ -86,7 +86,7 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
     if (!disabled) {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.txt,.md,.markdown';
+      input.accept = '.txt,.md,.markdown,.pdf';
       input.onchange = (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {

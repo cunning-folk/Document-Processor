@@ -1,4 +1,3 @@
-const pdfParse = require('pdf-parse');
 import pdf2pic from 'pdf2pic';
 import { createWorker } from 'tesseract.js';
 import path from 'path';
@@ -13,6 +12,18 @@ interface PDFProcessingResult {
 
 export class PDFProcessor {
   private ocrWorker: any = null;
+  private pdfParse: any = null;
+
+  async initializePdfParse() {
+    if (!this.pdfParse) {
+      try {
+        this.pdfParse = (await import('pdf-parse')).default;
+      } catch (error: any) {
+        log(`Failed to import pdf-parse: ${error.message}`, 'pdf-processor');
+        throw new Error('PDF parsing library not available');
+      }
+    }
+  }
 
   async initializeOCR() {
     if (!this.ocrWorker) {
@@ -31,6 +42,8 @@ export class PDFProcessor {
 
   async processPDF(buffer: Buffer, filename: string): Promise<PDFProcessingResult> {
     try {
+      await this.initializePdfParse();
+      
       // First, try text extraction
       const textResult = await this.extractTextFromPDF(buffer);
       
@@ -54,14 +67,14 @@ export class PDFProcessor {
         method: textResult.text.trim().length > 0 ? 'hybrid' : 'ocr'
       };
 
-    } catch (error) {
+    } catch (error: any) {
       log(`PDF processing failed for ${filename}: ${error.message}`, 'pdf-processor');
       throw new Error(`Failed to process PDF: ${error.message}`);
     }
   }
 
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
-    const data = await pdfParse(buffer);
+    const data = await this.pdfParse(buffer);
     return {
       text: data.text,
       totalPages: data.numpages
@@ -83,7 +96,7 @@ export class PDFProcessor {
       });
 
       // Get PDF info to know page count
-      const pdfData = await pdfParse(buffer);
+      const pdfData = await this.pdfParse(buffer);
       const totalPages = pdfData.numpages;
       
       const extractedTexts: string[] = [];
@@ -107,7 +120,7 @@ export class PDFProcessor {
               log(`Failed to clean up temp file ${image.path}`, 'pdf-processor');
             }
           }
-        } catch (pageError) {
+        } catch (pageError: any) {
           log(`Failed to process page ${pageNum}: ${pageError.message}`, 'pdf-processor');
           extractedTexts.push(`[Page ${pageNum} processing failed]`);
         }
@@ -118,7 +131,7 @@ export class PDFProcessor {
         totalPages
       };
 
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(`OCR processing failed: ${error.message}`);
     }
   }

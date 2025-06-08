@@ -211,7 +211,7 @@ export default function DocumentUpload() {
                   </div>
                   <div className="relative">
                     <p className="text-lg font-body font-medium text-gray-900 mb-1 break-words">{selectedFile.name}</p>
-                    <p className="text-xs font-body text-gray-500">
+                    <p className="text-xs font-mono text-gray-500">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready to process
                     </p>
                     <Button
@@ -289,7 +289,7 @@ export default function DocumentUpload() {
                       </Button>
                     </label>
                   </div>
-                  <p className="text-xs font-body text-gray-400">
+                  <p className="text-xs font-mono text-gray-400">
                     Supports PDF, TXT, and MD files up to 50MB
                   </p>
                 </div>

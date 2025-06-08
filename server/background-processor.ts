@@ -98,7 +98,7 @@ export class BackgroundProcessor {
             }
           ],
           temperature: 0.3,
-          max_tokens: 4000
+          max_tokens: 16000
         });
 
         processedContent = response.choices[0].message.content || chunk.content;

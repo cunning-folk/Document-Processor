@@ -160,7 +160,7 @@ export class PDFProcessor {
       fs.writeFileSync(tempPdfPath, buffer);
       
       // Extract text using Ghostscript
-      await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}"`);
+      await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}" 2>/dev/null`);
       
       if (fs.existsSync(tempTextPath)) {
         const extractedText = fs.readFileSync(tempTextPath, 'utf8');

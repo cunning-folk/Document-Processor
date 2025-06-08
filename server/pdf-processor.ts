@@ -1,4 +1,6 @@
 import pdf2pic from 'pdf2pic';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { createWorker } from 'tesseract.js';
 import path from 'path';
 import fs from 'fs';
@@ -86,75 +88,130 @@ export class PDFProcessor {
 
   private async extractTextWithOCR(buffer: Buffer, filename: string): Promise<{ text: string; totalPages: number }> {
     await this.initializeOCR();
+    const execAsync = promisify(exec);
 
     try {
-      // Convert PDF to images with more aggressive conversion settings
-      const convert = pdf2pic.fromBuffer(buffer, {
-        density: 150,           // Higher DPI for better quality
-        saveFilename: "page",
-        savePath: "/tmp",
-        format: "png",
-        width: 1800,           // Balanced resolution
-        height: 1800,
-        preserveAspectRatio: true
-      });
+      // Save PDF to temporary file for processing
+      const tempPdfPath = `/tmp/pdf_${Date.now()}.pdf`;
+      fs.writeFileSync(tempPdfPath, buffer);
 
-      // Try progressive page processing since we can't get reliable page count
+      // Try multiple conversion approaches
       const extractedTexts: string[] = [];
       let successfulPages = 0;
-      let consecutiveFailures = 0;
-      const maxConsecutiveFailures = 3;
-      const maxTotalPages = 20; // Process up to 20 pages
-      
-      for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
-        try {
-          log(`Processing page ${pageNum} for ${filename}`, 'pdf-processor');
-          
-          const image = await convert(pageNum);
-          
-          if (image.path) {
-            // Perform OCR on the image
-            const { data: { text } } = await this.ocrWorker.recognize(image.path);
-            const cleanText = text.trim();
+      const maxTotalPages = 20;
+
+      // Method 1: Try pdf2pic with different settings
+      try {
+        const convert = pdf2pic.fromPath(tempPdfPath, {
+          density: 200,
+          saveFilename: "page",
+          savePath: "/tmp",
+          format: "png",
+          width: 2000,
+          height: 2000
+        });
+
+        for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
+          try {
+            log(`Attempting pdf2pic conversion for page ${pageNum}`, 'pdf-processor');
+            const image = await convert(pageNum);
             
-            if (cleanText.length > 10) { // Require at least some meaningful content
-              extractedTexts.push(cleanText);
-              successfulPages++;
-              consecutiveFailures = 0; // Reset failure counter on success
-              log(`Successfully extracted text from page ${pageNum}`, 'pdf-processor');
-            } else {
-              consecutiveFailures++;
-            }
-            
-            // Clean up temporary image file
-            try {
+            if (image.path && fs.existsSync(image.path)) {
+              const { data: { text } } = await this.ocrWorker.recognize(image.path);
+              const cleanText = text.trim();
+              
+              if (cleanText.length > 10) {
+                extractedTexts.push(cleanText);
+                successfulPages++;
+                log(`Successfully extracted text from page ${pageNum} using pdf2pic`, 'pdf-processor');
+              }
+              
               fs.unlinkSync(image.path);
-            } catch (unlinkError) {
-              log(`Failed to clean up temp file ${image.path}`, 'pdf-processor');
             }
-          } else {
-            consecutiveFailures++;
-          }
-        } catch (pageError: any) {
-          log(`Failed to process page ${pageNum}: ${pageError.message}`, 'pdf-processor');
-          consecutiveFailures++;
-          
-          // If we've hit too many consecutive failures, we've likely reached the end
-          if (consecutiveFailures >= maxConsecutiveFailures) {
-            log(`Stopping after ${consecutiveFailures} consecutive failures`, 'pdf-processor');
-            break;
+          } catch (pageError: any) {
+            log(`pdf2pic failed for page ${pageNum}: ${pageError.message}`, 'pdf-processor');
+            break; // Stop trying pdf2pic if it fails
           }
         }
-        
-        // Stop if we've processed enough content
-        if (successfulPages >= 10) {
-          log(`Processed sufficient pages (${successfulPages}), stopping`, 'pdf-processor');
-          break;
+      } catch (pdf2picError: any) {
+        log(`pdf2pic conversion failed: ${pdf2picError.message}`, 'pdf-processor');
+      }
+
+      // Method 2: Try direct ImageMagick conversion if pdf2pic failed
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting direct ImageMagick conversion', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              await execAsync(`convert "${tempPdfPath}[${pageNum}]" -density 200 -quality 100 "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using ImageMagick`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`ImageMagick failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break; // Stop if conversion fails
+            }
+          }
+        } catch (imageMagickError: any) {
+          log(`ImageMagick conversion failed: ${imageMagickError.message}`, 'pdf-processor');
         }
       }
 
+      // Method 3: Try GraphicsMagick as fallback
       if (extractedTexts.length === 0) {
-        throw new Error('No text could be extracted from PDF pages using OCR');
+        try {
+          log('Attempting GraphicsMagick conversion as fallback', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/gm_page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              await execAsync(`gm convert "${tempPdfPath}[${pageNum}]" -density 200 "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using GraphicsMagick`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`GraphicsMagick failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gmError: any) {
+          log(`GraphicsMagick conversion failed: ${gmError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Clean up temporary PDF file
+      try {
+        fs.unlinkSync(tempPdfPath);
+      } catch (cleanupError: any) {
+        log(`Failed to clean up temp PDF: ${cleanupError.message}`, 'pdf-processor');
+      }
+
+      if (extractedTexts.length === 0) {
+        throw new Error('No text could be extracted from PDF pages using any conversion method');
       }
 
       log(`Successfully extracted text from ${successfulPages} pages using OCR`, 'pdf-processor');

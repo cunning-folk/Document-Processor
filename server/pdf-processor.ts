@@ -49,12 +49,26 @@ export class PDFProcessor {
     
     try {
       // Early validation: Check for fundamental PDF structure issues
-      const bufferString = buffer.toString('utf8');
-      const hasValidPDFHeader = bufferString.startsWith('%PDF-') || buffer.subarray(0, 5).toString() === '%PDF-';
+      const headerBytes = buffer.subarray(0, 10);
+      const headerString = headerBytes.toString('binary');
+      const hasValidPDFHeader = headerString.includes('%PDF-') || 
+                               buffer.subarray(0, 5).toString('ascii') === '%PDF-' ||
+                               buffer.subarray(0, 5).toString('utf8') === '%PDF-';
       
       if (!hasValidPDFHeader) {
-        log(`Invalid PDF header detected for ${filename}`, 'pdf-processor');
-        throw new Error('This file does not appear to be a valid PDF. Please check the file format and try again.');
+        log(`Invalid PDF header detected for ${filename}. Header: ${headerString}`, 'pdf-processor');
+        // Try to be more lenient - check if it might be a valid PDF with unusual encoding
+        if (buffer.length < 1024) {
+          throw new Error('File too small to be a valid PDF. Please check the file and try again.');
+        }
+        
+        // Check for PDF signature in first 1KB
+        const firstKB = buffer.subarray(0, 1024).toString('binary');
+        if (!firstKB.includes('%PDF-')) {
+          throw new Error('This file does not appear to be a valid PDF. Please check the file format and try again.');
+        }
+        
+        log(`PDF header found in file body, proceeding with processing for ${filename}`, 'pdf-processor');
       }
       
       // Check for encryption markers early

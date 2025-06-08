@@ -44,85 +44,55 @@ export class PDFProcessor {
     log(`Processing PDF file: ${filename}`, 'pdf-processor');
     
     try {
-      // Early encryption detection to avoid processing encrypted PDFs
-      const bufferString = buffer.toString('utf8');
-      const hasEncryptionInBuffer = bufferString.includes('U2FsdGVkX1') || 
-                                  bufferString.includes('/Encrypt') ||
-                                  bufferString.includes('encrypted');
-      
-      if (hasEncryptionInBuffer) {
-        log(`Early encryption detection: PDF contains encryption markers for ${filename}`, 'pdf-processor');
-        throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
-      }
-
       await this.initializePdfParse();
       
-      // Try text extraction - this should work for most PDFs
-      let textExtractionFailed = false;
-      let hasMinimalContent = false;
+      // Step 1: Always attempt PDF normalization first (emulates print-to-PDF)
+      log(`Starting automatic PDF preprocessing for ${filename}`, 'pdf-processor');
+      const normalizedBuffer = await this.normalizePDF(buffer, filename);
       
+      let processingBuffer = normalizedBuffer || buffer;
+      let normalizationUsed = normalizedBuffer !== null;
+      
+      if (normalizationUsed) {
+        log(`PDF preprocessing successful, using normalized version for ${filename}`, 'pdf-processor');
+      } else {
+        log(`PDF preprocessing failed, using original for ${filename}`, 'pdf-processor');
+      }
+      
+      // Step 2: Try text extraction on preprocessed PDF
       try {
-        const textResult = await this.extractTextFromPDF(buffer);
+        const textResult = await this.extractTextFromPDF(processingBuffer);
         const extractedText = textResult.text.trim();
         
-        if (extractedText.length < 50) {
-          log(`PDF text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
-          hasMinimalContent = true;
-        } else {
-          log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
+        // Check for encryption markers in extracted text
+        if (extractedText.includes('U2FsdGVkX1') || extractedText.includes('encrypted')) {
+          log(`Extracted text contains encryption markers for ${filename}`, 'pdf-processor');
+          throw new Error('This PDF contains encrypted content that cannot be processed. Please provide an unprotected version.');
+        }
+        
+        if (extractedText.length >= 50) {
+          log(`Text extraction successful for ${filename} using ${normalizationUsed ? 'preprocessed' : 'original'} PDF`, 'pdf-processor');
           return {
             text: textResult.text,
             totalPages: textResult.totalPages,
-            method: 'text-extraction'
+            method: normalizationUsed ? 'normalized-text-extraction' : 'text-extraction'
           };
+        } else {
+          log(`Text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
         }
       } catch (textError: any) {
-        log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
-        textExtractionFailed = true;
+        log(`Text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
         
-        // Check for encryption/protection indicators in error message
+        // Check for encryption/protection indicators
         const errorMessage = textError.message.toLowerCase();
         if (errorMessage.includes('encrypted') || errorMessage.includes('password') || errorMessage.includes('protected')) {
           throw new Error('This PDF appears to be password-protected or encrypted. Please provide an unprotected version.');
         }
       }
 
-      // If we detected issues, try PDF normalization
-      if (textExtractionFailed || hasMinimalContent) {
-        log(`Attempting PDF normalization for ${filename} (failed: ${textExtractionFailed}, minimal: ${hasMinimalContent})`, 'pdf-processor');
-        
-        try {
-          const normalizedBuffer = await this.normalizePDF(buffer, filename);
-          if (normalizedBuffer) {
-            log(`PDF normalization successful, attempting text extraction for ${filename}`, 'pdf-processor');
-            try {
-              const normalizedResult = await this.extractTextFromPDF(normalizedBuffer);
-              const normalizedText = normalizedResult.text.trim();
-              
-              if (normalizedText.length > 10) {
-                log(`PDF normalization and text extraction successful for ${filename}`, 'pdf-processor');
-                return {
-                  text: normalizedResult.text,
-                  totalPages: normalizedResult.totalPages,
-                  method: 'normalized-text-extraction'
-                };
-              } else {
-                log(`Normalized PDF still yielded minimal content for ${filename}`, 'pdf-processor');
-              }
-            } catch (normalizedError: any) {
-              log(`Normalized PDF text extraction failed: ${normalizedError.message}`, 'pdf-processor');
-            }
-          } else {
-            log(`PDF normalization returned null buffer for ${filename}`, 'pdf-processor');
-          }
-        } catch (normalizationError: any) {
-          log(`PDF normalization process failed for ${filename}: ${normalizationError.message}`, 'pdf-processor');
-        }
-      }
-
-      // Only attempt OCR for PDFs that might be image-based (no encryption detected)
-      log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
-      const ocrResult = await this.extractTextWithOCR(buffer, filename);
+      // Step 3: Try OCR on preprocessed PDF as final attempt
+      log(`Attempting OCR processing on ${normalizationUsed ? 'preprocessed' : 'original'} PDF for ${filename}`, 'pdf-processor');
+      const ocrResult = await this.extractTextWithOCR(processingBuffer, filename);
       
       return {
         text: ocrResult.text,
@@ -377,31 +347,90 @@ export class PDFProcessor {
       // Save original PDF to temporary file
       const tempInputPath = `/tmp/input_${Date.now()}.pdf`;
       const tempOutputPath = `/tmp/normalized_${Date.now()}.pdf`;
+      const tempCleanPath = `/tmp/clean_${Date.now()}.pdf`;
       
       fs.writeFileSync(tempInputPath, buffer);
       
-      // Method 1: Use Ghostscript to rebuild PDF to standard format
+      // Method 1: Advanced Ghostscript reconstruction (emulates print-to-PDF)
       try {
-        log(`Attempting PDF normalization via Ghostscript for ${filename}`, 'pdf-processor');
-        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -sOutputFile="${tempOutputPath}" "${tempInputPath}"`);
+        log(`Attempting advanced PDF reconstruction for ${filename}`, 'pdf-processor');
         
-        if (fs.existsSync(tempOutputPath)) {
-          const normalizedBuffer = fs.readFileSync(tempOutputPath);
-          fs.unlinkSync(tempInputPath);
-          fs.unlinkSync(tempOutputPath);
-          log(`PDF normalization successful via Ghostscript for ${filename}`, 'pdf-processor');
-          return normalizedBuffer;
+        // First pass: Remove encryption and flatten structure
+        const gsCommand = `gs -dNOPAUSE -dBATCH -dSAFER -dNOOUTERSAVE \
+          -sDEVICE=pdfwrite \
+          -dCompatibilityLevel=1.7 \
+          -dPDFSETTINGS=/default \
+          -dEmbedAllFonts=true \
+          -dSubsetFonts=true \
+          -dOptimize=true \
+          -dUseCIEColor=true \
+          -dDetectDuplicateImages=true \
+          -dCompressFonts=true \
+          -dNOTRANSPARENCY \
+          -sOutputFile="${tempOutputPath}" \
+          "${tempInputPath}" 2>/dev/null`;
+        
+        await execAsync(gsCommand);
+        
+        if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
+          // Second pass: Further cleanup and optimization
+          const cleanCommand = `gs -dNOPAUSE -dBATCH -dSAFER \
+            -sDEVICE=pdfwrite \
+            -dCompatibilityLevel=1.4 \
+            -dPDFSETTINGS=/ebook \
+            -dDetectDuplicateImages=true \
+            -dCompressFonts=true \
+            -dNOTRANSPARENCY \
+            -sOutputFile="${tempCleanPath}" \
+            "${tempOutputPath}" 2>/dev/null`;
+          
+          await execAsync(cleanCommand);
+          
+          if (fs.existsSync(tempCleanPath) && fs.statSync(tempCleanPath).size > 0) {
+            const normalizedBuffer = fs.readFileSync(tempCleanPath);
+            try {
+              fs.unlinkSync(tempInputPath);
+              fs.unlinkSync(tempOutputPath);
+              fs.unlinkSync(tempCleanPath);
+            } catch (cleanupError) {
+              // Ignore cleanup errors
+            }
+            log(`Advanced PDF reconstruction successful for ${filename}`, 'pdf-processor');
+            return normalizedBuffer;
+          }
         }
       } catch (gsError: any) {
-        log(`Ghostscript normalization failed: ${gsError.message}`, 'pdf-processor');
+        log(`Advanced Ghostscript reconstruction failed: ${gsError.message}`, 'pdf-processor');
       }
       
-      // Method 2: Use qpdf for PDF structure repair
+      // Method 2: Simple Ghostscript flattening (fallback)
       try {
-        log(`Attempting PDF normalization via qpdf for ${filename}`, 'pdf-processor');
-        await execAsync(`qpdf --linearize --object-streams=preserve "${tempInputPath}" "${tempOutputPath}"`);
+        log(`Attempting simple PDF flattening for ${filename}`, 'pdf-processor');
+        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -sOutputFile="${tempOutputPath}" "${tempInputPath}" 2>/dev/null`);
         
-        if (fs.existsSync(tempOutputPath)) {
+        if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
+          const normalizedBuffer = fs.readFileSync(tempOutputPath);
+          try {
+            fs.unlinkSync(tempInputPath);
+            fs.unlinkSync(tempOutputPath);
+            if (fs.existsSync(tempCleanPath)) fs.unlinkSync(tempCleanPath);
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
+          log(`Simple PDF flattening successful for ${filename}`, 'pdf-processor');
+          return normalizedBuffer;
+        }
+      } catch (gsSimpleError: any) {
+        log(`Simple PDF flattening failed: ${gsSimpleError.message}`, 'pdf-processor');
+      }
+      
+      // Method 3: qpdf decrypt and repair
+      try {
+        log(`Attempting qpdf decrypt and repair for ${filename}`, 'pdf-processor');
+        // First try to decrypt if encrypted, then linearize
+        await execAsync(`qpdf --decrypt "${tempInputPath}" "${tempOutputPath}" 2>/dev/null || qpdf --linearize "${tempInputPath}" "${tempOutputPath}" 2>/dev/null`);
+        
+        if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           const normalizedBuffer = fs.readFileSync(tempOutputPath);
           fs.unlinkSync(tempInputPath);
           fs.unlinkSync(tempOutputPath);

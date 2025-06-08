@@ -46,29 +46,54 @@ export class PDFProcessor {
 
   async processPDF(buffer: Buffer, filename: string): Promise<PDFProcessingResult> {
     log(`Processing PDF file: ${filename}`, 'pdf-processor');
+    log(`Buffer size: ${buffer.length} bytes`, 'pdf-processor');
     
     try {
-      // Early validation: Check for fundamental PDF structure issues
-      const headerBytes = buffer.subarray(0, 10);
-      const headerString = headerBytes.toString('binary');
-      const hasValidPDFHeader = headerString.includes('%PDF-') || 
+      // Detailed header analysis
+      const first20Bytes = buffer.subarray(0, 20);
+      const headerHex = first20Bytes.toString('hex');
+      const headerBinary = first20Bytes.toString('binary');
+      const headerAscii = first20Bytes.toString('ascii');
+      const headerUtf8 = first20Bytes.toString('utf8');
+      
+      log(`Header analysis for ${filename}:`, 'pdf-processor');
+      log(`- Hex: ${headerHex}`, 'pdf-processor');
+      log(`- Binary: ${headerBinary}`, 'pdf-processor');
+      log(`- ASCII: ${headerAscii}`, 'pdf-processor');
+      log(`- UTF-8: ${headerUtf8}`, 'pdf-processor');
+      
+      // Multiple ways to check for PDF header
+      const hasValidPDFHeader = headerBinary.includes('%PDF-') || 
+                               headerAscii.includes('%PDF-') ||
+                               headerUtf8.includes('%PDF-') ||
                                buffer.subarray(0, 5).toString('ascii') === '%PDF-' ||
                                buffer.subarray(0, 5).toString('utf8') === '%PDF-';
       
       if (!hasValidPDFHeader) {
-        log(`Invalid PDF header detected for ${filename}. Header: ${headerString}`, 'pdf-processor');
-        // Try to be more lenient - check if it might be a valid PDF with unusual encoding
+        log(`No PDF header found in first 20 bytes for ${filename}`, 'pdf-processor');
+        
+        // Check if file is too small
         if (buffer.length < 1024) {
           throw new Error('File too small to be a valid PDF. Please check the file and try again.');
         }
         
-        // Check for PDF signature in first 1KB
-        const firstKB = buffer.subarray(0, 1024).toString('binary');
-        if (!firstKB.includes('%PDF-')) {
-          throw new Error('This file does not appear to be a valid PDF. Please check the file format and try again.');
+        // Search for PDF signature in larger portion
+        let pdfFound = false;
+        for (let i = 0; i < Math.min(buffer.length, 4096); i += 512) {
+          const chunk = buffer.subarray(i, i + 512).toString('binary');
+          if (chunk.includes('%PDF-')) {
+            log(`PDF signature found at offset ${i} for ${filename}`, 'pdf-processor');
+            pdfFound = true;
+            break;
+          }
         }
         
-        log(`PDF header found in file body, proceeding with processing for ${filename}`, 'pdf-processor');
+        if (!pdfFound) {
+          log(`Warning: No PDF signature found, but attempting to process anyway for ${filename}`, 'pdf-processor');
+          // Don't throw error - let the PDF parsing library handle validation
+        }
+      } else {
+        log(`Valid PDF header detected for ${filename}`, 'pdf-processor');
       }
       
       // Check for encryption markers early

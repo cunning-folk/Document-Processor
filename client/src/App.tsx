@@ -17,7 +17,7 @@ function Navigation() {
     <nav className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-40 animate-in slide-in-from-top-2 duration-500">
       <div className="container mx-auto px-4 py-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-in slide-in-from-left-2 duration-700">
+          <h1 className="text-lg sm:text-xl font-display font-medium bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-in slide-in-from-left-2 duration-700">
             Document Processor
           </h1>
           <div className="flex gap-2 animate-in slide-in-from-right-2 duration-700 delay-200">

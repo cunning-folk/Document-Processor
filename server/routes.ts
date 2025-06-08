@@ -151,6 +151,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Serve test PDF for download
+  app.get("/api/test-pdf", (req, res) => {
+    const path = require('path');
+    const testPdfPath = path.join(process.cwd(), 'test-simple.pdf');
+    res.download(testPdfPath, "test-document.pdf", (err) => {
+      if (err) {
+        console.error("Test PDF download error:", err);
+        res.status(404).json({ message: "Test PDF not found" });
+      }
+    });
+  });
+
   // Get all documents (history)
   app.get("/api/documents", async (req, res) => {
     try {

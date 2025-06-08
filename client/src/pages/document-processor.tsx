@@ -208,6 +208,21 @@ export default function DocumentProcessor() {
               selectedFile={uploadedFile}
               disabled={processDocumentMutation.isPending}
             />
+            
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800 mb-2">
+                Having trouble with PDF uploads? Try our test document:
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open('/api/test-pdf', '_blank')}
+                className="text-amber-700 border-amber-300 hover:bg-amber-100"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Test PDF
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

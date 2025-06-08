@@ -47,6 +47,8 @@ export default function DocumentHistory() {
       }
       return response.json();
     },
+    refetchInterval: 2000, // Refetch every 2 seconds for real-time updates
+    refetchIntervalInBackground: true,
   });
 
   const deleteMutation = useMutation({

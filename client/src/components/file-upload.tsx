@@ -112,7 +112,9 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
   const getFileIcon = (file: File) => {
     const fileName = file.name.toLowerCase();
     if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
-      return <FileText className="text-green-500" />;
+      return <FilePen className="text-green-500" />;
+    } else if (fileName.endsWith('.pdf')) {
+      return <FileImage className="text-red-500" />;
     }
     return <FileText className="text-blue-500" />;
   };
@@ -162,7 +164,7 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
             <p className={`text-sm transition-colors duration-300 ${
               disabled ? 'text-gray-400' : 'text-slate-500'
             }`}>
-              Supports TXT and Markdown files up to 10MB
+              Supports TXT, Markdown, and PDF files up to 50MB
             </p>
           </div>
           
@@ -176,8 +178,14 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
             <span className={`flex items-center transition-transform duration-300 ${
               !disabled ? 'hover:scale-110' : ''
             }`}>
-              <FileText className="text-green-500 mr-1 h-4 w-4" />
+              <FilePen className="text-green-500 mr-1 h-4 w-4" />
               Markdown
+            </span>
+            <span className={`flex items-center transition-transform duration-300 ${
+              !disabled ? 'hover:scale-110' : ''
+            }`}>
+              <FileImage className="text-red-500 mr-1 h-4 w-4" />
+              PDF
             </span>
           </div>
         </div>

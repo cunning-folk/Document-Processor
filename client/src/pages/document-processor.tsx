@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileUpload } from "@/components/file-upload";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { PrivacyNotice } from "@/components/privacy-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,14 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { 
+  generateEncryptionKey, 
+  encryptContent, 
+  decryptContent, 
+  hashFilename, 
+  storeEncryptionKey,
+  getEncryptionKey
+} from "@/lib/encryption";
 import { 
   FileText, 
   Settings, 
@@ -34,26 +43,38 @@ export default function DocumentProcessor() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [processedMarkdown, setProcessedMarkdown] = useState("");
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
-    { id: "extract", label: "Extracting text from document...", status: "pending" },
-    { id: "chunk", label: "Checking document size...", status: "pending" },
-    { id: "openai", label: "Processing with OpenAI Assistant...", status: "pending" },
-    { id: "format", label: "Combining results...", status: "pending" }
+    { id: "extract", label: "Encrypting document content...", status: "pending" },
+    { id: "chunk", label: "Preparing secure upload...", status: "pending" },
+    { id: "openai", label: "Processing with AI (encrypted)...", status: "pending" },
+    { id: "format", label: "Finalizing secure processing...", status: "pending" }
   ]);
 
   const { toast } = useToast();
 
   const processDocumentMutation = useMutation({
     mutationFn: async (data: { file: File; apiKey: string; assistantId: string }) => {
-      const formData = new FormData();
-      formData.append("file", data.file);
-      formData.append("apiKey", data.apiKey);
-      formData.append("assistantId", data.assistantId);
-
-      // Simulate processing steps
+      // Generate encryption key for this document
+      const encryptionKey = generateEncryptionKey();
+      
+      // Read file content
+      const fileContent = await data.file.text();
+      
+      // Encrypt the content before upload
       updateProcessingStep("extract", "active");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const encryptedContent = encryptContent(fileContent, encryptionKey);
+      const hashedFilename = hashFilename(data.file.name, encryptionKey);
       updateProcessingStep("extract", "completed");
       
+      // Create encrypted file blob
+      const encryptedBlob = new Blob([encryptedContent], { type: 'text/plain' });
+      const encryptedFile = new File([encryptedBlob], hashedFilename, { type: 'text/plain' });
+      
+      const formData = new FormData();
+      formData.append("file", encryptedFile);
+      formData.append("apiKey", data.apiKey);
+      formData.append("assistantId", data.assistantId);
+      formData.append("isEncrypted", "true"); // Flag for server
+
       updateProcessingStep("chunk", "active");
       await new Promise(resolve => setTimeout(resolve, 500));
       updateProcessingStep("chunk", "completed");
@@ -62,6 +83,9 @@ export default function DocumentProcessor() {
       
       const response = await apiRequest("POST", "/api/process-document", formData);
       const result = await response.json();
+      
+      // Store encryption key for later decryption
+      storeEncryptionKey(result.id, encryptionKey);
       
       updateProcessingStep("openai", "completed");
       updateProcessingStep("format", "active");

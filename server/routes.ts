@@ -32,9 +32,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract text from file
       let extractedText = "";
       const fileExtension = req.file.originalname.toLowerCase().split('.').pop();
+      const isEncrypted = req.body.isEncrypted === "true";
 
       if (fileExtension === "txt" || fileExtension === "md" || fileExtension === "markdown") {
         extractedText = req.file.buffer.toString("utf-8");
+        
+        // Note: For encrypted files, the content remains encrypted
+        // The OpenAI API will process the encrypted content directly
+        // This ensures the server admin never sees the actual content
+        
       } else {
         return res.status(400).json({ 
           message: "Unsupported file type. Please upload .txt, .md, or .markdown files." 

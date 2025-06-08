@@ -10,6 +10,10 @@ export interface IStorage {
   getAllDocuments(): Promise<Document[]>;
   deleteDocument(id: number): Promise<boolean>;
   
+  // Privacy and cleanup
+  getExpiredDocuments(): Promise<Document[]>;
+  cleanupExpiredDocuments(): Promise<number>;
+  
   // Chunk management
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
   getDocumentChunks(documentId: number): Promise<DocumentChunk[]>;

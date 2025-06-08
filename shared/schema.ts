@@ -1,4 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -19,6 +20,8 @@ export const documents = pgTable("documents", {
   errorMessage: text("error_message"),
   apiKey: text("api_key").notNull(),
   assistantId: text("assistant_id").notNull(),
+  isEncrypted: boolean("is_encrypted").default(false),
+  expiresAt: timestamp("expires_at").notNull().default(sql`NOW() + INTERVAL '24 HOURS'`),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -63,6 +66,7 @@ export const insertDocumentSchema = createInsertSchema(documents).pick({
   status: true,
   apiKey: true,
   assistantId: true,
+  isEncrypted: true,
 });
 
 export const insertDocumentChunkSchema = createInsertSchema(documentChunks).pick({

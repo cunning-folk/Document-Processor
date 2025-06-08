@@ -191,6 +191,8 @@ export default function DocumentProcessor() {
     <div className="min-h-screen bg-gray-50">
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
 
+        {/* Privacy Notice */}
+        <PrivacyNotice />
 
         {/* File Upload */}
         <Card className="mb-6 sm:mb-8">

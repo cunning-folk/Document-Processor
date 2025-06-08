@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { decryptContent, getEncryptionKey } from "@/lib/encryption";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Trash2, Download, FileText, Clock, AlertCircle, CheckCircle } from "lucide-react";
+import { Trash2, Download, FileText, Clock, AlertCircle, CheckCircle, Shield } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface Document {
   id: number;
@@ -17,6 +19,8 @@ interface Document {
   createdAt: string;
   processedMarkdown: string | null;
   errorMessage: string | null;
+  isEncrypted: boolean;
+  expiresAt: string;
 }
 
 interface DocumentHistoryResponse {
@@ -32,6 +36,7 @@ interface DocumentHistoryResponse {
 export default function DocumentHistory() {
   const [currentPage, setCurrentPage] = useState(1);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/documents", currentPage],
@@ -64,7 +69,25 @@ export default function DocumentHistory() {
         throw new Error('Download failed');
       }
       
-      const blob = await response.blob();
+      let content = await response.text();
+      
+      // Check if document is encrypted and decrypt if needed
+      const encryptionKey = getEncryptionKey(documentId);
+      if (encryptionKey) {
+        try {
+          content = decryptContent(content, encryptionKey);
+        } catch (error) {
+          toast({
+            title: "Decryption Failed",
+            description: "Unable to decrypt document content. The encryption key may be invalid.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
+      // Create blob from decrypted content
+      const blob = new Blob([content], { type: 'text/markdown' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       const originalName = filename.replace(/\.[^/.]+$/, "");
@@ -173,9 +196,17 @@ export default function DocumentHistory() {
                 <CardHeader className="pb-3">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base sm:text-lg truncate">{doc.filename}</CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">
-                        Uploaded {formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}
+                      <div className="flex items-center gap-2 mb-1">
+                        <CardTitle className="text-base sm:text-lg truncate">{doc.filename}</CardTitle>
+                        {doc.isEncrypted && (
+                          <Shield className="h-4 w-4 text-green-600" title="End-to-end encrypted" />
+                        )}
+                      </div>
+                      <CardDescription className="text-xs sm:text-sm space-y-1">
+                        <div>Uploaded {formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}</div>
+                        <div className="text-orange-600">
+                          Auto-deletes {formatDistanceToNow(new Date(doc.expiresAt), { addSuffix: true })} for privacy
+                        </div>
                       </CardDescription>
                     </div>
                     <div className="flex items-center">

@@ -88,44 +88,42 @@ export class PDFProcessor {
     await this.initializeOCR();
 
     try {
-      // Convert PDF to images
+      // Convert PDF to images with more aggressive conversion settings
       const convert = pdf2pic.fromBuffer(buffer, {
-        density: 100,           // DPI
+        density: 150,           // Higher DPI for better quality
         saveFilename: "page",
         savePath: "/tmp",
         format: "png",
-        width: 2000,           // Higher resolution for better OCR
-        height: 2000
+        width: 1800,           // Balanced resolution
+        height: 1800,
+        preserveAspectRatio: true
       });
 
-      // Try to get PDF info to know page count, fallback if it fails
-      let totalPages = 1;
-      try {
-        const pdfData = await pdfParse(buffer);
-        totalPages = pdfData.numpages || 1;
-      } catch (pageCountError: any) {
-        log(`Could not determine page count, will process up to 5 pages: ${pageCountError.message}`, 'pdf-processor');
-        totalPages = 5; // Fallback to processing up to 5 pages
-      }
-      
+      // Try progressive page processing since we can't get reliable page count
       const extractedTexts: string[] = [];
-
-      // Process each page
-      const maxPages = Math.min(totalPages, 5); // Limit to 5 pages for performance
       let successfulPages = 0;
+      let consecutiveFailures = 0;
+      const maxConsecutiveFailures = 3;
+      const maxTotalPages = 20; // Process up to 20 pages
       
-      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
         try {
-          log(`Processing page ${pageNum}/${totalPages} for ${filename}`, 'pdf-processor');
+          log(`Processing page ${pageNum} for ${filename}`, 'pdf-processor');
           
           const image = await convert(pageNum);
           
           if (image.path) {
             // Perform OCR on the image
             const { data: { text } } = await this.ocrWorker.recognize(image.path);
-            if (text.trim().length > 0) {
-              extractedTexts.push(text.trim());
+            const cleanText = text.trim();
+            
+            if (cleanText.length > 10) { // Require at least some meaningful content
+              extractedTexts.push(cleanText);
               successfulPages++;
+              consecutiveFailures = 0; // Reset failure counter on success
+              log(`Successfully extracted text from page ${pageNum}`, 'pdf-processor');
+            } else {
+              consecutiveFailures++;
             }
             
             // Clean up temporary image file
@@ -134,21 +132,32 @@ export class PDFProcessor {
             } catch (unlinkError) {
               log(`Failed to clean up temp file ${image.path}`, 'pdf-processor');
             }
+          } else {
+            consecutiveFailures++;
           }
         } catch (pageError: any) {
           log(`Failed to process page ${pageNum}: ${pageError.message}`, 'pdf-processor');
-          // Don't add error text, just continue to next page
-          if (pageNum > 2 && successfulPages === 0) {
-            // If we've failed on multiple pages with no success, stop trying
+          consecutiveFailures++;
+          
+          // If we've hit too many consecutive failures, we've likely reached the end
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            log(`Stopping after ${consecutiveFailures} consecutive failures`, 'pdf-processor');
             break;
           }
+        }
+        
+        // Stop if we've processed enough content
+        if (successfulPages >= 10) {
+          log(`Processed sufficient pages (${successfulPages}), stopping`, 'pdf-processor');
+          break;
         }
       }
 
       if (extractedTexts.length === 0) {
-        throw new Error('No text could be extracted from PDF pages');
+        throw new Error('No text could be extracted from PDF pages using OCR');
       }
 
+      log(`Successfully extracted text from ${successfulPages} pages using OCR`, 'pdf-processor');
       return {
         text: extractedTexts.join('\n\n'),
         totalPages: successfulPages

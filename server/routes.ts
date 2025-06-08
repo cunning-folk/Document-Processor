@@ -2,6 +2,7 @@ import { Express } from "express";
 import { createServer, Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
+import { pdfProcessor } from "./pdf-processor";
 import { log } from "./vite";
 import { backgroundProcessor } from "./background-processor";
 
@@ -41,9 +42,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // The OpenAI API will process the encrypted content directly
         // This ensures the server admin never sees the actual content
         
+      } else if (fileExtension === "pdf") {
+        log(`Processing PDF file: ${req.file.originalname}`, "express");
+        
+        try {
+          const pdfResult = await pdfProcessor.processPDF(req.file.buffer, req.file.originalname);
+          extractedText = pdfResult.text;
+          
+          log(`PDF processed successfully using ${pdfResult.method}, ${pdfResult.totalPages} pages`, "express");
+        } catch (pdfError: any) {
+          log(`PDF processing failed: ${pdfError.message}`, "express");
+          return res.status(400).json({ 
+            message: `Failed to process PDF: ${pdfError.message}` 
+          });
+        }
+        
       } else {
         return res.status(400).json({ 
-          message: "Unsupported file type. Please upload .txt, .md, or .markdown files." 
+          message: "Unsupported file type. Please upload .txt, .md, .markdown, or .pdf files." 
         });
       }
 

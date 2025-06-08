@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CloudUpload, File, FileText, X, FilePen, Sparkles } from "lucide-react";
+import { CloudUpload, File, FileText, X, FilePen, Sparkles, FileImage } from "lucide-react";
 
 interface FileUploadProps {
   onFileSelect: (file: File | null) => void;
@@ -15,15 +15,15 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
   const { toast } = useToast();
 
   const validateFile = (file: File): boolean => {
-    const validTypes = ['text/plain', 'text/markdown'];
-    const validExtensions = ['.txt', '.md', '.markdown'];
+    const validTypes = ['text/plain', 'text/markdown', 'application/pdf'];
+    const validExtensions = ['.txt', '.md', '.markdown', '.pdf'];
     const fileExtension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 50 * 1024 * 1024; // 50MB for PDFs
 
     if (!validTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
       toast({
         title: "Invalid file type",
-        description: "Please upload a TXT or Markdown file.",
+        description: "Please upload a TXT, Markdown, or PDF file.",
         variant: "destructive",
       });
       return false;
@@ -32,7 +32,7 @@ export function FileUpload({ onFileSelect, selectedFile, disabled }: FileUploadP
     if (file.size > maxSize) {
       toast({
         title: "File too large",
-        description: "Maximum file size is 10MB.",
+        description: "Maximum file size is 50MB.",
         variant: "destructive",
       });
       return false;

@@ -14,7 +14,7 @@ const pdfParse = require('pdf-parse');
 interface PDFProcessingResult {
   text: string;
   totalPages: number;
-  method: 'text-extraction' | 'ocr' | 'hybrid';
+  method: 'text-extraction' | 'ocr' | 'hybrid' | 'normalized-text-extraction';
 }
 
 export class PDFProcessor {
@@ -53,11 +53,18 @@ export class PDFProcessor {
       try {
         const textResult = await this.extractTextFromPDF(buffer);
         
-        // Check if extracted text contains encryption markers
+        // Check if extracted text contains encryption markers or is insufficient
         const extractedText = textResult.text.trim();
-        if (extractedText.includes('U2FsdGVkX1') || extractedText.includes('encrypted') || extractedText.length < 10) {
-          log(`PDF text extraction detected potential encryption markers for ${filename}`, 'pdf-processor');
+        const hasEncryptionMarkers = extractedText.includes('U2FsdGVkX1') || 
+                                   extractedText.includes('encrypted') || 
+                                   extractedText.includes('salted');
+        
+        if (hasEncryptionMarkers) {
+          log(`PDF text extraction detected encryption markers for ${filename}`, 'pdf-processor');
           hasEncryptedContent = true;
+        } else if (extractedText.length < 50) {
+          log(`PDF text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
+          // Continue to normalization for short extractions
         } else {
           log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
           return {
@@ -111,12 +118,12 @@ export class PDFProcessor {
         }
       }
 
-      // If normalization failed or wasn't attempted, throw appropriate error for encrypted content
+      // If we detected encryption, don't attempt OCR as it will fail with same encryption markers
       if (hasEncryptedContent) {
         throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
       }
 
-      // Only attempt OCR if no encryption was detected
+      // Only attempt OCR if no encryption was detected and text extraction yielded minimal content
       log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
       const ocrResult = await this.extractTextWithOCR(buffer, filename);
       

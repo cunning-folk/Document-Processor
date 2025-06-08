@@ -203,6 +203,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Serve PDF text extractor script
+  app.get("/extract-pdf-text.py", async (req, res) => {
+    try {
+      const path = await import('path');
+      const fs = await import('fs');
+      const extractorPath = path.join(process.cwd(), 'extract-pdf-text.py');
+      
+      if (!fs.existsSync(extractorPath)) {
+        return res.status(404).json({ message: "PDF extractor script not found" });
+      }
+      
+      res.download(extractorPath, "extract-pdf-text.py", (err) => {
+        if (err) {
+          console.error("PDF extractor download error:", err);
+          res.status(500).json({ message: "Failed to download PDF extractor" });
+        }
+      });
+    } catch (error) {
+      console.error("PDF extractor endpoint error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Get all documents (history)
   app.get("/api/documents", async (req, res) => {
     try {

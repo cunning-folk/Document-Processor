@@ -166,7 +166,7 @@ export default function DocumentProcessor() {
 
     if (inputMode === 'file') {
       processDocumentMutation.mutate({
-        file: uploadedFile,
+        file: uploadedFile!,
         apiKey: "", // Will be handled by server environment variables
         assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
       });
@@ -309,6 +309,27 @@ export default function DocumentProcessor() {
                 <FileText className="text-primary mr-2 h-4 w-4 sm:h-5 sm:w-5" />
                 Direct Text Input
               </h2>
+              
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="text-sm font-medium text-blue-900 mb-2">For PDF Files:</h3>
+                <div className="text-xs text-blue-800 space-y-2">
+                  <p>If you have a PDF that won't upload due to encryption, extract the text locally first:</p>
+                  <div className="bg-blue-100 p-2 rounded font-mono text-xs">
+                    python extract-pdf-text.py your-document.pdf
+                  </div>
+                  <p>Then copy the extracted text from the generated _extracted.txt file and paste it below.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open('/extract-pdf-text.py', '_blank')}
+                  className="mt-3 text-blue-700 border-blue-300 hover:bg-blue-100"
+                >
+                  <Download className="mr-2 h-3 w-3" />
+                  Download PDF Extractor
+                </Button>
+              </div>
+              
               <textarea
                 value={directText}
                 onChange={(e) => setDirectText(e.target.value)}

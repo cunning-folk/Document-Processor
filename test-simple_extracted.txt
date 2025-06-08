@@ -1,0 +1,9 @@
+Test Document
+This is a simple test PDF for processing.
+It contains basic text content that should be
+easily extractable by the PDF processor.
+Line 1: This is test content for PDF processing.
+Line 2: The PDF processor should extract this text.
+Line 3: This helps verify the system is working correctly.
+Line 4: No encryption or special formatting here.
+Line 5: Just plain text for testing purposes.

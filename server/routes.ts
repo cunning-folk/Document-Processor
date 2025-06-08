@@ -157,15 +157,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Serve test PDF for download
-  app.get("/api/test-pdf", (req, res) => {
-    const path = require('path');
-    const testPdfPath = path.join(process.cwd(), 'test-simple.pdf');
-    res.download(testPdfPath, "test-document.pdf", (err) => {
-      if (err) {
-        console.error("Test PDF download error:", err);
-        res.status(404).json({ message: "Test PDF not found" });
+  app.get("/api/test-pdf", async (req, res) => {
+    try {
+      const path = await import('path');
+      const fs = await import('fs');
+      const testPdfPath = path.join(process.cwd(), 'test-simple.pdf');
+      
+      // Check if file exists first
+      if (!fs.existsSync(testPdfPath)) {
+        return res.status(404).json({ message: "Test PDF not found" });
       }
-    });
+      
+      res.download(testPdfPath, "test-document.pdf", (err) => {
+        if (err) {
+          console.error("Test PDF download error:", err);
+          res.status(500).json({ message: "Failed to download test PDF" });
+        }
+      });
+    } catch (error) {
+      console.error("Test PDF endpoint error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   // Get all documents (history)

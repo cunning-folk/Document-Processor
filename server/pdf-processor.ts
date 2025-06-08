@@ -44,27 +44,30 @@ export class PDFProcessor {
     log(`Processing PDF file: ${filename}`, 'pdf-processor');
     
     try {
+      // Early encryption detection to avoid processing encrypted PDFs
+      const bufferString = buffer.toString('utf8');
+      const hasEncryptionInBuffer = bufferString.includes('U2FsdGVkX1') || 
+                                  bufferString.includes('/Encrypt') ||
+                                  bufferString.includes('encrypted');
+      
+      if (hasEncryptionInBuffer) {
+        log(`Early encryption detection: PDF contains encryption markers for ${filename}`, 'pdf-processor');
+        throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
+      }
+
       await this.initializePdfParse();
       
-      // First, try text extraction - this should work for most PDFs
+      // Try text extraction - this should work for most PDFs
       let textExtractionFailed = false;
-      let hasEncryptedContent = false;
+      let hasMinimalContent = false;
       
       try {
         const textResult = await this.extractTextFromPDF(buffer);
-        
-        // Check if extracted text contains encryption markers or is insufficient
         const extractedText = textResult.text.trim();
-        const hasEncryptionMarkers = extractedText.includes('U2FsdGVkX1') || 
-                                   extractedText.includes('encrypted') || 
-                                   extractedText.includes('salted');
         
-        if (hasEncryptionMarkers) {
-          log(`PDF text extraction detected encryption markers for ${filename}`, 'pdf-processor');
-          hasEncryptedContent = true;
-        } else if (extractedText.length < 50) {
+        if (extractedText.length < 50) {
           log(`PDF text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
-          // Continue to normalization for short extractions
+          hasMinimalContent = true;
         } else {
           log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
           return {
@@ -77,16 +80,16 @@ export class PDFProcessor {
         log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
         textExtractionFailed = true;
         
-        // Check for encryption/protection indicators
+        // Check for encryption/protection indicators in error message
         const errorMessage = textError.message.toLowerCase();
         if (errorMessage.includes('encrypted') || errorMessage.includes('password') || errorMessage.includes('protected')) {
-          hasEncryptedContent = true;
+          throw new Error('This PDF appears to be password-protected or encrypted. Please provide an unprotected version.');
         }
       }
 
-      // If we detected issues or encryption, try PDF normalization
-      if (textExtractionFailed || hasEncryptedContent) {
-        log(`Attempting PDF normalization for ${filename} (failed: ${textExtractionFailed}, encrypted: ${hasEncryptedContent})`, 'pdf-processor');
+      // If we detected issues, try PDF normalization
+      if (textExtractionFailed || hasMinimalContent) {
+        log(`Attempting PDF normalization for ${filename} (failed: ${textExtractionFailed}, minimal: ${hasMinimalContent})`, 'pdf-processor');
         
         try {
           const normalizedBuffer = await this.normalizePDF(buffer, filename);
@@ -96,8 +99,7 @@ export class PDFProcessor {
               const normalizedResult = await this.extractTextFromPDF(normalizedBuffer);
               const normalizedText = normalizedResult.text.trim();
               
-              // Check if normalization removed encryption markers
-              if (normalizedText.length > 10 && !normalizedText.includes('U2FsdGVkX1')) {
+              if (normalizedText.length > 10) {
                 log(`PDF normalization and text extraction successful for ${filename}`, 'pdf-processor');
                 return {
                   text: normalizedResult.text,
@@ -105,7 +107,7 @@ export class PDFProcessor {
                   method: 'normalized-text-extraction'
                 };
               } else {
-                log(`Normalized PDF still contains encryption markers for ${filename}`, 'pdf-processor');
+                log(`Normalized PDF still yielded minimal content for ${filename}`, 'pdf-processor');
               }
             } catch (normalizedError: any) {
               log(`Normalized PDF text extraction failed: ${normalizedError.message}`, 'pdf-processor');
@@ -118,12 +120,7 @@ export class PDFProcessor {
         }
       }
 
-      // If we detected encryption, don't attempt OCR as it will fail with same encryption markers
-      if (hasEncryptedContent) {
-        throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
-      }
-
-      // Only attempt OCR if no encryption was detected and text extraction yielded minimal content
+      // Only attempt OCR for PDFs that might be image-based (no encryption detected)
       log(`Attempting OCR processing for ${filename}`, 'pdf-processor');
       const ocrResult = await this.extractTextWithOCR(buffer, filename);
       
@@ -140,9 +137,9 @@ export class PDFProcessor {
       if (errorMessage.includes('u2fsdgvkx1') || errorMessage.includes('salted') || errorMessage.includes('encrypted')) {
         log(`PDF contains encrypted content: ${filename}`, 'pdf-processor');
         throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
-      } else if (errorMessage.includes('undefined in') && errorMessage.includes('u2fsdgvkx1')) {
-        log(`PDF has encryption markers: ${filename}`, 'pdf-processor');
-        throw new Error('This PDF has encryption or protection that prevents processing. Please try a different PDF or remove protection.');
+      } else if (errorMessage.includes('undefined in') || errorMessage.includes('improper image header')) {
+        log(`PDF has structural issues: ${filename}`, 'pdf-processor');
+        throw new Error('This PDF has structural issues that prevent processing. The file may be corrupted or use an unsupported format.');
       } else {
         log(`PDF processing completely failed for ${filename}: ${error.message}`, 'pdf-processor');
         throw new Error('Unable to process PDF file. The file may be corrupted, password-protected, or in an unsupported format.');
@@ -163,6 +160,13 @@ export class PDFProcessor {
     const execAsync = promisify(exec);
 
     try {
+      // First, check if PDF contains encrypted content markers by examining the raw buffer
+      const bufferString = buffer.toString('utf8');
+      if (bufferString.includes('U2FsdGVkX1') || bufferString.includes('/Encrypt')) {
+        log(`OCR skipped: PDF contains encryption markers for ${filename}`, 'pdf-processor');
+        throw new Error('PDF contains encrypted content that prevents OCR processing');
+      }
+
       // Save PDF to temporary file for processing
       const tempPdfPath = `/tmp/pdf_${Date.now()}.pdf`;
       fs.writeFileSync(tempPdfPath, buffer);

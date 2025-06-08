@@ -43,10 +43,10 @@ export default function DocumentProcessor() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [processedMarkdown, setProcessedMarkdown] = useState("");
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
-    { id: "extract", label: "Encrypting document content...", status: "pending" },
-    { id: "chunk", label: "Preparing secure upload...", status: "pending" },
-    { id: "openai", label: "Processing with AI (encrypted)...", status: "pending" },
-    { id: "format", label: "Finalizing secure processing...", status: "pending" }
+    { id: "extract", label: "🔐 Encrypting document content...", status: "pending" },
+    { id: "chunk", label: "📦 Preparing secure upload...", status: "pending" },
+    { id: "openai", label: "🤖 Processing with AI (encrypted)...", status: "pending" },
+    { id: "format", label: "✨ Finalizing secure processing...", status: "pending" }
   ]);
 
   const { toast } = useToast();
@@ -176,14 +176,15 @@ export default function DocumentProcessor() {
     });
   };
 
-  const getStepIcon = (status: ProcessingStep['status']) => {
+  const getStepIcon = (status: ProcessingStep['status'], index: number) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        return <CheckCircle className="w-4 h-4 text-green-500 animate-in zoom-in-75 duration-300" />;
       case 'active':
         return <Loader2 className="w-4 h-4 text-primary animate-spin" />;
       default:
-        return <div className="w-4 h-4 rounded-full bg-gray-300" />;
+        return <div className={`w-4 h-4 rounded-full bg-gray-300 animate-in fade-in duration-300`} 
+                    style={{ animationDelay: `${index * 150}ms` }} />;
     }
   };
 

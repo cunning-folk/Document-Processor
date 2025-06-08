@@ -1,0 +1,12 @@
+Test PDF Document for Processing
+
+This is a test PDF file to verify PDF processing capabilities.
+The content should be extracted and processed by the OpenAI assistant.
+
+Key features being tested:
+• PDF text extraction
+• Document chunking and processing
+• Integration with OpenAI assistant
+• Privacy and encryption features
+
+This content should be cleaned up and properly formatted as markdown output.

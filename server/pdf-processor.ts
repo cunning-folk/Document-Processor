@@ -150,36 +150,42 @@ export class PDFProcessor {
   }
 
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
+    // Use Ghostscript-based text extraction since pdftotext isn't available
     const execAsync = promisify(exec);
     
     try {
-      // Use pdftotext command-line tool as alternative to broken pdf-parse library
       const tempPdfPath = `/tmp/extract_${Date.now()}.pdf`;
       const tempTextPath = `/tmp/extract_${Date.now()}.txt`;
       
       fs.writeFileSync(tempPdfPath, buffer);
       
-      // Extract text using pdftotext
-      await execAsync(`pdftotext "${tempPdfPath}" "${tempTextPath}"`);
+      // Extract text using Ghostscript
+      await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}"`);
       
       if (fs.existsSync(tempTextPath)) {
         const extractedText = fs.readFileSync(tempTextPath, 'utf8');
         
-        // Get page count using pdfinfo
+        // Get page count using Ghostscript
         let pageCount = 1;
         try {
-          const infoResult = await execAsync(`pdfinfo "${tempPdfPath}"`);
-          const pageMatch = infoResult.stdout.match(/Pages:\s*(\d+)/);
-          if (pageMatch) {
-            pageCount = parseInt(pageMatch[1], 10);
+          const pageCountResult = await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dNODISPLAY -c "(\`${tempPdfPath}\`) (r) file runpdfbegin pdfpagecount = quit"`);
+          const count = parseInt(pageCountResult.stdout.trim(), 10);
+          if (!isNaN(count) && count > 0) {
+            pageCount = count;
           }
-        } catch (infoError) {
-          // Page count detection failed, use default
+        } catch (countError) {
+          // Fallback: estimate from file size
+          const stats = fs.statSync(tempPdfPath);
+          pageCount = Math.max(1, Math.floor(stats.size / 50000)); // Rough estimate
         }
         
         // Cleanup
         if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
         if (fs.existsSync(tempTextPath)) fs.unlinkSync(tempTextPath);
+        
+        if (extractedText.trim().length < 10) {
+          throw new Error('Text extraction yielded minimal content');
+        }
         
         return {
           text: extractedText,

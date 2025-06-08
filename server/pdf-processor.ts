@@ -17,10 +17,15 @@ export class PDFProcessor {
   async initializePdfParse() {
     if (!this.pdfParse) {
       try {
-        this.pdfParse = (await import('pdf-parse')).default;
+        // Use dynamic import with createRequire for better compatibility
+        const { createRequire } = await import('module');
+        const require = createRequire(import.meta.url);
+        this.pdfParse = require('pdf-parse');
+        log('PDF parsing library initialized successfully', 'pdf-processor');
       } catch (error: any) {
         log(`Failed to import pdf-parse: ${error.message}`, 'pdf-processor');
-        throw new Error('PDF parsing library not available');
+        // Fallback to treating PDF as unsupported for now
+        throw new Error('PDF processing temporarily unavailable');
       }
     }
   }

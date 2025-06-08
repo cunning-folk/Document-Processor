@@ -411,8 +411,8 @@ export class PDFProcessor {
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           const normalizedBuffer = fs.readFileSync(tempOutputPath);
           try {
-            fs.unlinkSync(tempInputPath);
-            fs.unlinkSync(tempOutputPath);
+            if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+            if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
             if (fs.existsSync(tempCleanPath)) fs.unlinkSync(tempCleanPath);
           } catch (cleanupError) {
             // Ignore cleanup errors

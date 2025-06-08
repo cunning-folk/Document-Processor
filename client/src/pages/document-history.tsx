@@ -73,9 +73,22 @@ export default function DocumentHistory() {
       
       let content = await response.text();
       
+      // Get document to check encryption status
+      const docResponse = await fetch(`/api/documents/${documentId}`);
+      const document = await docResponse.json();
+      
       // Check if document is encrypted and decrypt if needed
-      const encryptionKey = getEncryptionKey(documentId);
-      if (encryptionKey) {
+      if (document.isEncrypted) {
+        const encryptionKey = getEncryptionKey(documentId);
+        if (!encryptionKey) {
+          toast({
+            title: "Encryption Key Missing",
+            description: "Cannot decrypt document. The encryption key was not found in session storage.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
         try {
           content = decryptContent(content, encryptionKey);
         } catch (error) {

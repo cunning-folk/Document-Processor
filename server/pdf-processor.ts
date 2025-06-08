@@ -3,6 +3,11 @@ import { createWorker } from 'tesseract.js';
 import path from 'path';
 import fs from 'fs';
 import { log } from './vite';
+import { createRequire } from 'module';
+
+// Use createRequire for pdf-parse to handle the library properly
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 interface PDFProcessingResult {
   text: string;
@@ -12,21 +17,10 @@ interface PDFProcessingResult {
 
 export class PDFProcessor {
   private ocrWorker: any = null;
-  private pdfParse: any = null;
 
   async initializePdfParse() {
-    if (!this.pdfParse) {
-      try {
-        // Use a simple require approach that avoids the test file issue
-        const pdfParse = eval('require')('pdf-parse');
-        this.pdfParse = pdfParse;
-        log('PDF parsing library initialized successfully', 'pdf-processor');
-      } catch (error: any) {
-        log(`PDF text extraction unavailable, using OCR-only mode: ${error.message}`, 'pdf-processor');
-        // Allow OCR-only processing if pdf-parse fails
-        this.pdfParse = null;
-      }
-    }
+    // pdf-parse is now imported at module level
+    log('PDF parsing library ready', 'pdf-processor');
   }
 
   async initializeOCR() {
@@ -48,24 +42,22 @@ export class PDFProcessor {
     try {
       await this.initializePdfParse();
       
-      // First, try text extraction if pdf-parse is available
+      // First, try text extraction
       let textResult = null;
-      if (this.pdfParse) {
-        try {
-          textResult = await this.extractTextFromPDF(buffer);
-          
-          // If we got substantial text, use it
-          if (textResult.text.trim().length > 50) {
-            log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
-            return {
-              text: textResult.text,
-              totalPages: textResult.totalPages,
-              method: 'text-extraction'
-            };
-          }
-        } catch (textError: any) {
-          log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
+      try {
+        textResult = await this.extractTextFromPDF(buffer);
+        
+        // If we got substantial text, use it
+        if (textResult.text.trim().length > 50) {
+          log(`PDF text extraction successful for ${filename}`, 'pdf-processor');
+          return {
+            text: textResult.text,
+            totalPages: textResult.totalPages,
+            method: 'text-extraction'
+          };
         }
+      } catch (textError: any) {
+        log(`PDF text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
       }
 
       // If text extraction failed or yielded little content, try OCR
@@ -85,7 +77,7 @@ export class PDFProcessor {
   }
 
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
-    const data = await this.pdfParse(buffer);
+    const data = await pdfParse(buffer);
     return {
       text: data.text,
       totalPages: data.numpages
@@ -109,10 +101,8 @@ export class PDFProcessor {
       // Try to get PDF info to know page count, fallback if it fails
       let totalPages = 1;
       try {
-        if (this.pdfParse) {
-          const pdfData = await this.pdfParse(buffer);
-          totalPages = pdfData.numpages || 1;
-        }
+        const pdfData = await pdfParse(buffer);
+        totalPages = pdfData.numpages || 1;
       } catch (pageCountError: any) {
         log(`Could not determine page count, will process up to 5 pages: ${pageCountError.message}`, 'pdf-processor');
         totalPages = 5; // Fallback to processing up to 5 pages

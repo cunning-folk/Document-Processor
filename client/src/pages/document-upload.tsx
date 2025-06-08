@@ -153,7 +153,7 @@ export default function DocumentUpload() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-6">
             <FileText className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-display font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
+          <h1 className="text-3xl font-display font-light bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
             Document Processor
           </h1>
           <p className="text-sm font-body text-gray-600 max-w-2xl mx-auto leading-relaxed">

@@ -5,6 +5,14 @@
 /* Custom Fonts */
 @font-face {
   font-family: 'GT-Alpina';
+  src: url('@assets/GT-Alpina-Standard-Light_1749423070078.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GT-Alpina';
   src: url('@assets/GT-Alpina-Standard-Medium_1749418963950.otf') format('opentype');
   font-weight: 500;
   font-style: normal;

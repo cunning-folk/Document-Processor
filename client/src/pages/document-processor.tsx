@@ -41,6 +41,8 @@ interface ProcessingStep {
 
 export default function DocumentProcessor() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [directText, setDirectText] = useState('');
+  const [inputMode, setInputMode] = useState<'file' | 'text'>('file');
   const [processedMarkdown, setProcessedMarkdown] = useState("");
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     { id: "extract", label: "🔐 Encrypting document content...", status: "pending" },
@@ -212,19 +214,48 @@ export default function DocumentProcessor() {
         {/* Privacy Notice */}
         <PrivacyNotice />
 
-        {/* File Upload */}
-        <Card className="mb-6 sm:mb-8">
+        {/* Input Mode Toggle */}
+        <Card className="mb-4">
           <CardContent className="pt-6">
-            <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-4 flex items-center">
-              <Upload className="text-primary mr-2 h-4 w-4 sm:h-5 sm:w-5" />
-              Upload Document
-            </h2>
-            
-            <FileUpload
-              onFileSelect={setUploadedFile}
-              selectedFile={uploadedFile}
-              disabled={processDocumentMutation.isPending}
-            />
+            <div className="flex items-center space-x-4 mb-4">
+              <button
+                onClick={() => setInputMode('file')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  inputMode === 'file' 
+                    ? 'bg-primary text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                File Upload
+              </button>
+              <button
+                onClick={() => setInputMode('text')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  inputMode === 'text' 
+                    ? 'bg-primary text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Direct Text Input
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* File Upload */}
+        {inputMode === 'file' && (
+          <Card className="mb-6 sm:mb-8">
+            <CardContent className="pt-6">
+              <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                <Upload className="text-primary mr-2 h-4 w-4 sm:h-5 sm:w-5" />
+                Upload Document
+              </h2>
+              
+              <FileUpload
+                onFileSelect={setUploadedFile}
+                selectedFile={uploadedFile}
+                disabled={processDocumentMutation.isPending}
+              />
             
             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <h3 className="text-sm font-medium text-blue-900 mb-2">Troubleshooting PDF Uploads</h3>
@@ -249,12 +280,32 @@ export default function DocumentProcessor() {
             </div>
           </CardContent>
         </Card>
+        )}
+
+        {/* Direct Text Input */}
+        {inputMode === 'text' && (
+          <Card className="mb-6 sm:mb-8">
+            <CardContent className="pt-6">
+              <h2 className="text-base sm:text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                <FileText className="text-primary mr-2 h-4 w-4 sm:h-5 sm:w-5" />
+                Direct Text Input
+              </h2>
+              <textarea
+                value={directText}
+                onChange={(e) => setDirectText(e.target.value)}
+                placeholder="Paste your document text here..."
+                className="w-full h-40 p-3 border border-gray-300 rounded-lg resize-vertical"
+                disabled={processDocumentMutation.isPending}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Process Button */}
         <div className="flex justify-center mb-6 sm:mb-8">
           <Button
             onClick={handleProcessDocument}
-            disabled={!uploadedFile || processDocumentMutation.isPending}
+            disabled={(inputMode === 'file' ? !uploadedFile : !directText.trim()) || processDocumentMutation.isPending}
             size="lg"
             className="w-full sm:w-auto px-6 sm:px-8 py-3 transition-all duration-300 hover:scale-105 hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none animate-in zoom-in-95 duration-500 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
           >

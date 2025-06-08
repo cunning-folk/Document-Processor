@@ -180,6 +180,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Serve test text file for download
+  app.get("/api/test-txt", async (req, res) => {
+    try {
+      const path = await import('path');
+      const fs = await import('fs');
+      const testTxtPath = path.join(process.cwd(), 'test-simple.txt');
+      
+      if (!fs.existsSync(testTxtPath)) {
+        return res.status(404).json({ message: "Test text file not found" });
+      }
+      
+      res.download(testTxtPath, "test-document.txt", (err) => {
+        if (err) {
+          console.error("Test text download error:", err);
+          res.status(500).json({ message: "Failed to download test text file" });
+        }
+      });
+    } catch (error) {
+      console.error("Test text endpoint error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Get all documents (history)
   app.get("/api/documents", async (req, res) => {
     try {

@@ -1,0 +1,10 @@
+This is a simple test document to verify the document processing system.
+
+It contains basic text that should be processed correctly by the OpenAI assistant.
+
+The system should be able to:
+- Extract this text content
+- Send it to OpenAI for formatting
+- Return properly formatted markdown
+
+This test helps verify that the core processing pipeline works when file encryption is not interfering with uploads.

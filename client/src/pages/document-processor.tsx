@@ -215,16 +215,16 @@ export default function DocumentProcessor() {
         <div className="flex justify-center mb-6 sm:mb-8">
           <Button
             onClick={handleProcessDocument}
-            disabled={processDocumentMutation.isPending}
+            disabled={!uploadedFile || processDocumentMutation.isPending}
             size="lg"
-            className="w-full sm:w-auto px-6 sm:px-8 py-3"
+            className="w-full sm:w-auto px-6 sm:px-8 py-3 transition-all duration-300 hover:scale-105 hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none animate-in zoom-in-95 duration-500 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
           >
             {processDocumentMutation.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-              <Wand2 className="mr-2 h-4 w-4" />
+              <Wand2 className="mr-2 h-4 w-4 transition-transform duration-300 hover:rotate-12" />
             )}
-            {processDocumentMutation.isPending ? "Processing..." : "Process Document"}
+            {processDocumentMutation.isPending ? "✨ Processing Magic..." : "🪄 Process Document"}
           </Button>
         </div>
 
@@ -237,12 +237,13 @@ export default function DocumentProcessor() {
                 <h3 className="font-semibold text-blue-900">Processing Document</h3>
               </div>
               <div className="space-y-3">
-                {processingSteps.map((step) => (
-                  <div key={step.id} className="flex items-center space-x-3">
-                    {getStepIcon(step.status)}
-                    <span className={`text-sm ${
-                      step.status === 'completed' ? 'text-green-800' :
-                      step.status === 'active' ? 'text-blue-800' : 'text-gray-500'
+                {processingSteps.map((step, index) => (
+                  <div key={step.id} className={`flex items-center space-x-3 animate-in slide-in-from-left-2 duration-500`} 
+                       style={{ animationDelay: `${index * 200}ms` }}>
+                    {getStepIcon(step.status, index)}
+                    <span className={`text-sm transition-all duration-300 ${
+                      step.status === 'completed' ? 'text-green-800 font-medium' :
+                      step.status === 'active' ? 'text-blue-800 font-medium animate-pulse' : 'text-gray-500'
                     }`}>
                       {step.label}
                     </span>
@@ -255,30 +256,30 @@ export default function DocumentProcessor() {
 
         {/* Results */}
         {processedMarkdown && (
-          <Card>
-            <div className="border-b border-gray-200 px-4 sm:px-6 py-4">
+          <Card className="animate-in slide-in-from-bottom-4 duration-700 shadow-lg border-green-200">
+            <div className="border-b border-gray-200 px-4 sm:px-6 py-4 bg-gradient-to-r from-green-50 to-blue-50">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <h2 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center">
-                  <FileText className="text-green-500 mr-2 h-4 w-4 sm:h-5 sm:w-5" />
-                  Processed Result
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 flex items-center animate-in slide-in-from-left-2 duration-500">
+                  <FileText className="text-green-500 mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-pulse" />
+                  ✨ Processed Result
                 </h2>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 animate-in slide-in-from-right-2 duration-500 delay-200">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleCopyToClipboard}
-                    className="flex-1 sm:flex-none"
+                    className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md"
                   >
-                    <Copy className="h-4 w-4 mr-2" />
+                    <Copy className="h-4 w-4 mr-2 transition-transform duration-200 hover:rotate-12" />
                     Copy
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleDownload}
-                    className="flex-1 sm:flex-none"
+                    className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-green-50 hover:bg-green-100"
                   >
-                    <Download className="h-4 w-4 mr-2" />
+                    <Download className="h-4 w-4 mr-2 transition-transform duration-200 hover:translate-y-0.5" />
                     Download
                   </Button>
                 </div>

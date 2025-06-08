@@ -191,15 +191,21 @@ export default function DocumentHistory() {
       ) : (
         <>
           <div className="space-y-4">
-            {data?.documents.map((doc) => (
-              <Card key={doc.id}>
+            {data?.documents.map((doc, index) => (
+              <Card key={doc.id} className={`animate-in slide-in-from-bottom-2 duration-500 hover:shadow-lg transition-all hover:scale-[1.02] border-l-4 ${
+                doc.status === 'completed' ? 'border-l-green-500' : 
+                doc.status === 'processing' ? 'border-l-blue-500' : 
+                doc.status === 'failed' ? 'border-l-red-500' : 'border-l-gray-300'
+              }`} style={{ animationDelay: `${index * 100}ms` }}>
                 <CardHeader className="pb-3">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <CardTitle className="text-base sm:text-lg truncate">{doc.filename}</CardTitle>
                         {doc.isEncrypted && (
-                          <Shield className="h-4 w-4 text-green-600" title="End-to-end encrypted" />
+                          <div className="relative animate-in zoom-in-75 duration-300 delay-300">
+                            <Shield className="h-4 w-4 text-green-600 animate-pulse" />
+                          </div>
                         )}
                       </div>
                       <CardDescription className="text-xs sm:text-sm space-y-1">
@@ -234,9 +240,9 @@ export default function DocumentHistory() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDownload(doc.id, doc.filename)}
-                          className="flex-1 sm:flex-none"
+                          className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-green-50 hover:bg-green-100 animate-in slide-in-from-bottom-2 duration-300 delay-500"
                         >
-                          <Download className="h-4 w-4 mr-2" />
+                          <Download className="h-4 w-4 mr-2 transition-transform duration-200 hover:translate-y-0.5" />
                           Download
                         </Button>
                       )}
@@ -245,9 +251,9 @@ export default function DocumentHistory() {
                         size="sm"
                         onClick={() => deleteMutation.mutate(doc.id)}
                         disabled={deleteMutation.isPending}
-                        className="flex-1 sm:flex-none"
+                        className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md hover:bg-red-50 hover:border-red-200 hover:text-red-600 animate-in slide-in-from-bottom-2 duration-300 delay-600"
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
+                        <Trash2 className="h-4 w-4 mr-2 transition-transform duration-200 hover:rotate-12" />
                         Delete
                       </Button>
                     </div>

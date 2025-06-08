@@ -1,6 +1,6 @@
 import { documents, documentChunks, type Document, type InsertDocument, type DocumentChunk, type InsertDocumentChunk } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 
 export interface IStorage {
   getDocument(id: number): Promise<Document | undefined>;
@@ -95,6 +95,23 @@ export class DatabaseStorage implements IStorage {
         eq(documentChunks.chunkIndex, chunkIndex)
       ));
     return results[0] || undefined;
+  }
+
+  // Privacy and cleanup methods
+  async getExpiredDocuments(): Promise<Document[]> {
+    return await db.select().from(documents).where(lt(documents.expiresAt, new Date()));
+  }
+
+  async cleanupExpiredDocuments(): Promise<number> {
+    const expiredDocs = await this.getExpiredDocuments();
+    let deletedCount = 0;
+
+    for (const doc of expiredDocs) {
+      const success = await this.deleteDocument(doc.id);
+      if (success) deletedCount++;
+    }
+
+    return deletedCount;
   }
 }
 

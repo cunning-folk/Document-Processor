@@ -57,7 +57,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         originalText: extractedText,
         status: "pending",
         apiKey,
-        assistantId
+        assistantId,
+        isEncrypted
       });
 
       // Chunk the document and create chunk records

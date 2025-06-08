@@ -28,6 +28,12 @@ export class BackgroundProcessor {
     this.isProcessing = true;
 
     try {
+      // First, cleanup expired documents for privacy
+      const deletedCount = await storage.cleanupExpiredDocuments();
+      if (deletedCount > 0) {
+        log(`Cleaned up ${deletedCount} expired documents for privacy`, "background-processor");
+      }
+
       // Find pending chunks to process
       const pendingDocuments = await storage.getDocumentsByStatus('processing');
       

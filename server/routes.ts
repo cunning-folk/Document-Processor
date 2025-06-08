@@ -130,24 +130,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Processing error:", error);
       
       // Determine appropriate status code and message based on error type
-      let statusCode = 500;
+      let statusCode = 422; // Default to unprocessable entity for PDF issues
       let message = error.message;
       
-      if (error.message.includes('encrypted during upload') || 
-          error.message.includes('Unable to detect PDF format')) {
-        statusCode = 422; // Unprocessable Entity
-        message = error.message;
-      } else if (error.message.includes('password-protected') || 
-                 error.message.includes('encrypted content')) {
-        statusCode = 422;
-        message = error.message;
-      } else if (error.message.includes('Invalid PDF header')) {
-        statusCode = 422;
-        message = error.message;
-      }
-      
+      // Return the error message directly without wrapping
       res.status(statusCode).json({ 
-        message: `Failed to process PDF: ${message}`
+        message: message
       });
     }
   });

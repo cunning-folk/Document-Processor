@@ -182,7 +182,11 @@ export class PDFProcessor {
       const errorMessage = error.message.toLowerCase();
       
       // Provide specific error messages for different failure types
-      if (errorMessage.includes('u2fsdgvkx1') || errorMessage.includes('salted') || errorMessage.includes('encrypted')) {
+      if (errorMessage.includes('u2fsdgvkx1') || errorMessage.includes('salted') || errorMessage.includes('encrypted during upload')) {
+        log(`PDF contains encrypted content: ${filename}`, 'pdf-processor');
+        // Re-throw the original specific error message instead of generic one
+        throw error;
+      } else if (errorMessage.includes('encrypted')) {
         log(`PDF contains encrypted content: ${filename}`, 'pdf-processor');
         throw new Error('This PDF contains encrypted or protected content that cannot be processed. Please provide an unprotected version.');
       } else if (errorMessage.includes('undefined in') || errorMessage.includes('improper image header')) {

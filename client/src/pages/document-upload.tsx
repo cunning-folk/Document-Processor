@@ -153,10 +153,10 @@ export default function DocumentUpload() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-6">
             <FileText className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+          <h1 className="text-3xl font-display font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
             Document Processor
           </h1>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-sm font-body text-gray-600 max-w-2xl mx-auto leading-relaxed">
             Transform your documents with AI-powered formatting. Upload PDF, TXT, or MD files and get beautifully structured content.
           </p>
         </div>
@@ -210,8 +210,8 @@ export default function DocumentUpload() {
                     </div>
                   </div>
                   <div className="relative">
-                    <p className="text-xl font-semibold text-gray-900 mb-2 break-words">{selectedFile.name}</p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-lg font-body font-medium text-gray-900 mb-1 break-words">{selectedFile.name}</p>
+                    <p className="text-xs font-body text-gray-500">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready to process
                     </p>
                     <Button
@@ -228,17 +228,17 @@ export default function DocumentUpload() {
                     <Button
                       onClick={handleProcess}
                       disabled={processMutation.isPending}
-                      className="min-w-36 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                      size="lg"
+                      className="min-w-32 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-sm font-body"
+                      size="default"
                     >
                       {processMutation.isPending ? (
                         <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
                           {isPolling ? 'Processing...' : 'Uploading...'}
                         </>
                       ) : (
                         <>
-                          <FileText className="mr-2 h-4 w-4" />
+                          <FileText className="mr-2 h-3 w-3" />
                           Process Document
                         </>
                       )}
@@ -247,7 +247,8 @@ export default function DocumentUpload() {
                       variant="outline"
                       onClick={() => setSelectedFile(null)}
                       disabled={processMutation.isPending}
-                      size="lg"
+                      size="default"
+                      className="text-sm font-body"
                     >
                       Choose Different File
                     </Button>

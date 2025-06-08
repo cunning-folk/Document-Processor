@@ -29,7 +29,7 @@ function Navigation() {
               >
                 <FileText className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Process Document</span>
-                <span className="sm:hidden">Process</span>
+                <span className="sm:hidden">Upload</span>
               </Button>
             </Link>
             <Link href="/history">

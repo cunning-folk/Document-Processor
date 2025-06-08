@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Copy, Download } from "lucide-react";
+import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Copy, Download, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function DocumentUpload() {
@@ -10,6 +10,9 @@ export default function DocumentUpload() {
   const [result, setResult] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showDropAnimation, setShowDropAnimation] = useState(false);
   const { toast } = useToast();
 
   const processMutation = useMutation({
@@ -80,10 +83,17 @@ export default function DocumentUpload() {
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
+    
+    if (e.type === "dragenter") {
+      setDragCounter(prev => prev + 1);
+      setDragActive(true);
+    } else if (e.type === "dragover") {
       setDragActive(true);
     } else if (e.type === "dragleave") {
-      setDragActive(false);
+      setDragCounter(prev => prev - 1);
+      if (dragCounter <= 1) {
+        setDragActive(false);
+      }
     }
   };
 
@@ -91,10 +101,18 @@ export default function DocumentUpload() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    setDragCounter(0);
+    setShowDropAnimation(true);
 
     const files = e.dataTransfer.files;
     if (files && files[0]) {
-      handleFileSelect(files[0]);
+      // Smooth drop animation
+      setTimeout(() => {
+        handleFileSelect(files[0]);
+        setShowDropAnimation(false);
+      }, 300);
+    } else {
+      setShowDropAnimation(false);
     }
   };
 
@@ -147,31 +165,64 @@ export default function DocumentUpload() {
         <Card className="mb-8 shadow-xl border-0 overflow-hidden">
           <CardContent className="pt-8">
             <div
-              className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
+              className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-500 ease-out ${
                 dragActive 
-                  ? 'border-blue-400 bg-blue-50 scale-105' 
-                  : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+                  ? 'border-blue-500 bg-gradient-to-br from-blue-50 via-blue-100 to-purple-50 scale-105 shadow-2xl transform rotate-1' 
+                  : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50 hover:scale-102 hover:shadow-lg'
+              } ${
+                showDropAnimation 
+                  ? 'animate-pulse border-green-500 bg-green-50' 
+                  : ''
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
+              {/* Floating particles animation when dragging */}
+              {dragActive && (
+                <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+                  <div className="absolute top-4 left-4 w-2 h-2 bg-blue-400 rounded-full animate-bounce opacity-60"></div>
+                  <div className="absolute top-8 right-8 w-1 h-1 bg-purple-400 rounded-full animate-ping opacity-40"></div>
+                  <div className="absolute bottom-6 left-12 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse opacity-50"></div>
+                  <div className="absolute bottom-12 right-6 w-1 h-1 bg-purple-500 rounded-full animate-bounce opacity-30 animation-delay-200"></div>
+                  <div className="absolute top-1/2 left-6 w-1 h-1 bg-blue-300 rounded-full animate-ping opacity-60 animation-delay-500"></div>
+                  <div className="absolute top-1/3 right-12 w-2 h-2 bg-purple-300 rounded-full animate-pulse opacity-40 animation-delay-700"></div>
+                </div>
+              )}
+
+              {/* Ripple effect on drop */}
+              {showDropAnimation && (
+                <div className="absolute inset-0 rounded-xl pointer-events-none">
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0 h-0 bg-green-400 rounded-full animate-ripple opacity-30"></div>
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0 h-0 bg-green-300 rounded-full animate-ripple opacity-20 animation-delay-200"></div>
+                </div>
+              )}
               {selectedFile ? (
-                <div className="space-y-6">
+                <div className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-4 duration-500">
                   <div className="flex items-center justify-center">
-                    <div className="relative">
-                      <CheckCircle2 className="h-16 w-16 text-green-500" />
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <div className="relative group">
+                      <div className="absolute -inset-2 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-30 group-hover:opacity-50 transition-opacity animate-pulse"></div>
+                      <CheckCircle2 className="relative h-16 w-16 text-green-500 transform group-hover:scale-110 transition-transform duration-300" />
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center animate-bounce">
                         <FileText className="w-3 h-3 text-white" />
                       </div>
                     </div>
                   </div>
-                  <div>
-                    <p className="text-xl font-semibold text-gray-900 mb-2">{selectedFile.name}</p>
+                  <div className="relative">
+                    <p className="text-xl font-semibold text-gray-900 mb-2 break-words">{selectedFile.name}</p>
                     <p className="text-sm text-gray-500">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready to process
                     </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedFile(null)}
+                      className="absolute -top-2 -right-2 h-6 w-6 p-0 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors"
+                      disabled={processMutation.isPending}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
                   <div className="flex gap-4 justify-center">
                     <Button
@@ -203,15 +254,20 @@ export default function DocumentUpload() {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-6 relative z-10">
                   <div className="flex items-center justify-center">
-                    <Upload className="h-16 w-16 text-gray-400" />
+                    <div className={`transition-all duration-300 ${dragActive ? 'animate-float scale-125' : 'hover:scale-110'}`}>
+                      <Upload className={`h-16 w-16 transition-colors duration-300 ${dragActive ? 'text-blue-500' : 'text-gray-400 hover:text-blue-400'}`} />
+                      {dragActive && (
+                        <div className="absolute inset-0 rounded-full animate-shimmer"></div>
+                      )}
+                    </div>
                   </div>
                   <div>
-                    <p className="text-2xl font-semibold text-gray-900 mb-3">
-                      Drop your document here
+                    <p className={`text-2xl font-semibold mb-3 transition-all duration-300 ${dragActive ? 'text-blue-600 scale-105' : 'text-gray-900'}`}>
+                      {dragActive ? 'Release to upload' : 'Drop your document here'}
                     </p>
-                    <p className="text-gray-500 mb-6">
+                    <p className={`mb-6 transition-colors duration-300 ${dragActive ? 'text-blue-500' : 'text-gray-500'}`}>
                       or click to browse files
                     </p>
                     <input
@@ -222,7 +278,12 @@ export default function DocumentUpload() {
                       id="file-upload"
                     />
                     <label htmlFor="file-upload">
-                      <Button variant="outline" size="lg" asChild>
+                      <Button 
+                        variant="outline" 
+                        size="lg" 
+                        asChild
+                        className={`transition-all duration-300 hover:scale-105 hover:shadow-md ${dragActive ? 'border-blue-400 text-blue-600 bg-blue-50' : ''}`}
+                      >
                         <span>Choose File</span>
                       </Button>
                     </label>

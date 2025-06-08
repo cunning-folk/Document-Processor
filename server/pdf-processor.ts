@@ -89,8 +89,15 @@ export class PDFProcessor {
         }
         
         if (!pdfFound) {
-          log(`Warning: No PDF signature found, but attempting to process anyway for ${filename}`, 'pdf-processor');
-          // Don't throw error - let the PDF parsing library handle validation
+          log(`No PDF signature found for ${filename}`, 'pdf-processor');
+          
+          // Check if this looks like encrypted content
+          if (headerBinary.includes('U2FsdGVkX1') || headerAscii.includes('U2FsdGVkX1')) {
+            throw new Error('This file appears to be encrypted during upload. This usually happens due to browser extensions or security software. Please try: 1) Disable browser extensions temporarily, 2) Use a different browser or incognito mode, 3) Try uploading from a different network, or 4) Use the test PDF provided in the interface.');
+          }
+          
+          // For other cases, provide general guidance
+          throw new Error('Unable to detect PDF format. Please ensure you are uploading a valid, unprotected PDF file. You can try the test PDF provided in the interface to verify the system is working correctly.');
         }
       } else {
         log(`Valid PDF header detected for ${filename}`, 'pdf-processor');

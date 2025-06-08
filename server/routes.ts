@@ -128,9 +128,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error: any) {
       console.error("Processing error:", error);
-      res.status(500).json({ 
-        message: "Failed to process document",
-        error: error.message 
+      
+      // Determine appropriate status code and message based on error type
+      let statusCode = 500;
+      let message = error.message;
+      
+      if (error.message.includes('encrypted during upload') || 
+          error.message.includes('Unable to detect PDF format')) {
+        statusCode = 422; // Unprocessable Entity
+        message = error.message;
+      } else if (error.message.includes('password-protected') || 
+                 error.message.includes('encrypted content')) {
+        statusCode = 422;
+        message = error.message;
+      } else if (error.message.includes('Invalid PDF header')) {
+        statusCode = 422;
+        message = error.message;
+      }
+      
+      res.status(statusCode).json({ 
+        message: `Failed to process PDF: ${message}`
       });
     }
   });

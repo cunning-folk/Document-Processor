@@ -103,11 +103,28 @@ export default function DocumentProcessor() {
       resetProcessingSteps();
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to process document",
-        variant: "destructive",
-      });
+      const errorMessage = error.message || "Failed to process document";
+      
+      // Show more helpful error messages for common issues
+      if (errorMessage.includes('encrypted during upload')) {
+        toast({
+          title: "Upload Issue Detected",
+          description: "Your file is being encrypted during upload. Try disabling browser extensions or use incognito mode.",
+          variant: "destructive",
+        });
+      } else if (errorMessage.includes('Unable to detect PDF format')) {
+        toast({
+          title: "Invalid PDF File",
+          description: "Please try the test PDF below to verify your setup is working correctly.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Processing Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
       resetProcessingSteps();
     }
   });
@@ -209,17 +226,24 @@ export default function DocumentProcessor() {
               disabled={processDocumentMutation.isPending}
             />
             
-            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800 mb-2">
-                Having trouble with PDF uploads? Try our test document:
-              </p>
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="text-sm font-medium text-blue-900 mb-2">Troubleshooting PDF Uploads</h3>
+              <div className="space-y-2 text-xs text-blue-800">
+                <p>If uploads fail, try these solutions:</p>
+                <ul className="ml-4 space-y-1 list-disc">
+                  <li>Download and test with our sample PDF first</li>
+                  <li>Disable browser extensions temporarily</li>
+                  <li>Use incognito/private browsing mode</li>
+                  <li>Try a different browser or network</li>
+                </ul>
+              </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => window.open('/api/test-pdf', '_blank')}
-                className="text-amber-700 border-amber-300 hover:bg-amber-100"
+                className="mt-3 text-blue-700 border-blue-300 hover:bg-blue-100"
               >
-                <Download className="mr-2 h-4 w-4" />
+                <Download className="mr-2 h-3 w-3" />
                 Download Test PDF
               </Button>
             </div>

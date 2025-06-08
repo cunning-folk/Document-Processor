@@ -79,27 +79,35 @@ export class PDFProcessor {
 
       // If we detected issues or encryption, try PDF normalization
       if (textExtractionFailed || hasEncryptedContent) {
-        log(`Attempting PDF normalization for ${filename}`, 'pdf-processor');
-        const normalizedBuffer = await this.normalizePDF(buffer, filename);
-        if (normalizedBuffer) {
-          try {
-            const normalizedResult = await this.extractTextFromPDF(normalizedBuffer);
-            const normalizedText = normalizedResult.text.trim();
-            
-            // Check if normalization removed encryption markers
-            if (normalizedText.length > 10 && !normalizedText.includes('U2FsdGVkX1')) {
-              log(`PDF normalization and text extraction successful for ${filename}`, 'pdf-processor');
-              return {
-                text: normalizedResult.text,
-                totalPages: normalizedResult.totalPages,
-                method: 'text-extraction'
-              };
-            } else {
-              log(`Normalized PDF still contains encryption markers for ${filename}`, 'pdf-processor');
+        log(`Attempting PDF normalization for ${filename} (failed: ${textExtractionFailed}, encrypted: ${hasEncryptedContent})`, 'pdf-processor');
+        
+        try {
+          const normalizedBuffer = await this.normalizePDF(buffer, filename);
+          if (normalizedBuffer) {
+            log(`PDF normalization successful, attempting text extraction for ${filename}`, 'pdf-processor');
+            try {
+              const normalizedResult = await this.extractTextFromPDF(normalizedBuffer);
+              const normalizedText = normalizedResult.text.trim();
+              
+              // Check if normalization removed encryption markers
+              if (normalizedText.length > 10 && !normalizedText.includes('U2FsdGVkX1')) {
+                log(`PDF normalization and text extraction successful for ${filename}`, 'pdf-processor');
+                return {
+                  text: normalizedResult.text,
+                  totalPages: normalizedResult.totalPages,
+                  method: 'normalized-text-extraction'
+                };
+              } else {
+                log(`Normalized PDF still contains encryption markers for ${filename}`, 'pdf-processor');
+              }
+            } catch (normalizedError: any) {
+              log(`Normalized PDF text extraction failed: ${normalizedError.message}`, 'pdf-processor');
             }
-          } catch (normalizedError: any) {
-            log(`Normalized PDF text extraction failed: ${normalizedError.message}`, 'pdf-processor');
+          } else {
+            log(`PDF normalization returned null buffer for ${filename}`, 'pdf-processor');
           }
+        } catch (normalizationError: any) {
+          log(`PDF normalization process failed for ${filename}: ${normalizationError.message}`, 'pdf-processor');
         }
       }
 

@@ -182,7 +182,7 @@ export default function PDFProcessor() {
                 </div>
                 <div>
                   <p className="text-lg font-medium text-gray-900 mb-2">
-                    Drop your PDF here
+                    Drop your document here
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
                     or click to browse files

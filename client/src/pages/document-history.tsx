@@ -64,56 +64,32 @@ export default function DocumentHistory() {
     },
   });
 
-  const handleDownload = async (documentId: number, filename: string) => {
+  const handleDownload = (documentId: number, filename: string) => {
     try {
-      const response = await fetch(`/api/documents/${documentId}/download`);
-      if (!response.ok) {
-        throw new Error('Download failed');
-      }
-      
-      let content = await response.text();
-      
-      // Get document to check encryption status
-      const docResponse = await fetch(`/api/documents/${documentId}`);
-      const document = await docResponse.json();
-      
-      // Check if document is encrypted and decrypt if needed
-      if (document.isEncrypted) {
-        const encryptionKey = getEncryptionKey(documentId);
-        if (!encryptionKey) {
-          toast({
-            title: "Encryption Key Missing",
-            description: "Cannot decrypt document. The encryption key was not found in session storage.",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        try {
-          content = decryptContent(content, encryptionKey);
-        } catch (error) {
-          toast({
-            title: "Decryption Failed",
-            description: "Unable to decrypt document content. The encryption key may be invalid.",
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-      
-      // Create blob from decrypted content
-      const blob = new Blob([content], { type: 'text/markdown' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      // Use direct browser navigation for download
       const originalName = filename.replace(/\.[^/.]+$/, "");
-      a.href = url;
+      const downloadUrl = `/api/documents/${documentId}/download`;
+      
+      // Create a temporary link and trigger download
+      const a = document.createElement('a');
+      a.href = downloadUrl;
       a.download = `${originalName}_processed.md`;
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      toast({
+        title: "Download Started",
+        description: "Your document download has started.",
+      });
     } catch (error) {
       console.error('Download failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Unable to download the document. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 

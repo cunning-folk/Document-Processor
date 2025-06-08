@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { FloatingActionButton } from "@/components/floating-action-button";
 import { Button } from "@/components/ui/button";
 import { FileText, History } from "lucide-react";
-import PDFProcessor from "@/pages/pdf-processor";
+import DocumentUpload from "@/pages/document-upload";
 import DocumentHistory from "@/pages/document-history";
 import NotFound from "@/pages/not-found";
 
@@ -56,7 +56,7 @@ function Router() {
       <Navigation />
       <main>
         <Switch>
-          <Route path="/" component={PDFProcessor} />
+          <Route path="/" component={DocumentUpload} />
           <Route path="/history" component={DocumentHistory} />
           <Route path="/document-history" component={DocumentHistory} />
           <Route component={NotFound} />

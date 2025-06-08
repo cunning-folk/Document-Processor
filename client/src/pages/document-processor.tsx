@@ -146,7 +146,7 @@ export default function DocumentProcessor() {
   };
 
   const handleProcessDocument = () => {
-    if (!uploadedFile) {
+    if (inputMode === 'file' && !uploadedFile) {
       toast({
         title: "File Required",
         description: "Please upload a file first",
@@ -155,11 +155,30 @@ export default function DocumentProcessor() {
       return;
     }
 
-    processDocumentMutation.mutate({
-      file: uploadedFile,
-      apiKey: "", // Will be handled by server environment variables
-      assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
-    });
+    if (inputMode === 'text' && !directText.trim()) {
+      toast({
+        title: "Text Required",
+        description: "Please enter some text to process",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (inputMode === 'file') {
+      processDocumentMutation.mutate({
+        file: uploadedFile,
+        apiKey: "", // Will be handled by server environment variables
+        assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
+      });
+    } else {
+      // For text input, create a simple text file
+      const textFile = new File([directText], 'direct-input.txt', { type: 'text/plain' });
+      processDocumentMutation.mutate({
+        file: textFile,
+        apiKey: "", // Will be handled by server environment variables
+        assistantId: "asst_OqSPqevzweqfm85VGKcJuNPF"
+      });
+    }
   };
 
   const handleCopyToClipboard = async () => {

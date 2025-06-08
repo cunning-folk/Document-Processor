@@ -137,16 +137,17 @@ export class PDFProcessor {
         log(`pdf2pic conversion failed: ${pdf2picError.message}`, 'pdf-processor');
       }
 
-      // Method 2: Try direct ImageMagick conversion if pdf2pic failed
+      // Method 2: Try direct ImageMagick with safer options if pdf2pic failed
       if (extractedTexts.length === 0) {
         try {
-          log('Attempting direct ImageMagick conversion', 'pdf-processor');
+          log('Attempting direct ImageMagick conversion with safe options', 'pdf-processor');
           
           for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
             const outputPath = `/tmp/page_${Date.now()}_${pageNum}.png`;
             
             try {
-              await execAsync(`convert "${tempPdfPath}[${pageNum}]" -density 200 -quality 100 "${outputPath}"`);
+              // Use safer ImageMagick options that bypass problematic PDF structures
+              await execAsync(`convert -limit memory 256MiB -limit map 512MiB -density 150 "${tempPdfPath}[${pageNum}]" -flatten -background white -alpha remove "${outputPath}"`);
               
               if (fs.existsSync(outputPath)) {
                 const { data: { text } } = await this.ocrWorker.recognize(outputPath);
@@ -161,7 +162,7 @@ export class PDFProcessor {
                 fs.unlinkSync(outputPath);
               }
             } catch (pageError: any) {
-              log(`ImageMagick failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              log(`ImageMagick safe mode failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
               break; // Stop if conversion fails
             }
           }
@@ -170,16 +171,84 @@ export class PDFProcessor {
         }
       }
 
-      // Method 3: Try GraphicsMagick as fallback
+      // Method 2b: Try ImageMagick with different Ghostscript options
       if (extractedTexts.length === 0) {
         try {
-          log('Attempting GraphicsMagick conversion as fallback', 'pdf-processor');
+          log('Attempting ImageMagick with custom Ghostscript settings', 'pdf-processor');
+          
+          for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/page_gs_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              // Use custom Ghostscript parameters for better compatibility
+              await execAsync(`convert -define pdf:use-cropbox=true -define pdf:fit-page=true -density 150 "${tempPdfPath}[${pageNum}]" "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum + 1} using custom GS settings`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`Custom GS settings failed for page ${pageNum + 1}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gsError: any) {
+          log(`Custom Ghostscript method failed: ${gsError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Method 3: Try direct Ghostscript with error recovery
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting direct Ghostscript conversion with error recovery', 'pdf-processor');
+          
+          for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
+            const outputPath = `/tmp/gs_page_${Date.now()}_${pageNum}.png`;
+            
+            try {
+              // Direct Ghostscript command with error recovery options
+              await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dFirstPage=${pageNum} -dLastPage=${pageNum} -sDEVICE=png16m -r150 -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -sOutputFile="${outputPath}" "${tempPdfPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const { data: { text } } = await this.ocrWorker.recognize(outputPath);
+                const cleanText = text.trim();
+                
+                if (cleanText.length > 10) {
+                  extractedTexts.push(cleanText);
+                  successfulPages++;
+                  log(`Successfully extracted text from page ${pageNum} using direct Ghostscript`, 'pdf-processor');
+                }
+                
+                fs.unlinkSync(outputPath);
+              }
+            } catch (pageError: any) {
+              log(`Direct Ghostscript failed for page ${pageNum}: ${pageError.message}`, 'pdf-processor');
+              break;
+            }
+          }
+        } catch (gsDirectError: any) {
+          log(`Direct Ghostscript conversion failed: ${gsDirectError.message}`, 'pdf-processor');
+        }
+      }
+
+      // Method 4: Try GraphicsMagick as final fallback
+      if (extractedTexts.length === 0) {
+        try {
+          log('Attempting GraphicsMagick conversion as final fallback', 'pdf-processor');
           
           for (let pageNum = 0; pageNum < maxTotalPages; pageNum++) {
             const outputPath = `/tmp/gm_page_${Date.now()}_${pageNum}.png`;
             
             try {
-              await execAsync(`gm convert "${tempPdfPath}[${pageNum}]" -density 200 "${outputPath}"`);
+              await execAsync(`gm convert "${tempPdfPath}[${pageNum}]" -density 150 "${outputPath}"`);
               
               if (fs.existsSync(outputPath)) {
                 const { data: { text } } = await this.ocrWorker.recognize(outputPath);

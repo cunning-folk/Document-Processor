@@ -69,6 +69,12 @@ export class PDFProcessor {
                                buffer.subarray(0, 5).toString('ascii') === '%PDF-' ||
                                buffer.subarray(0, 5).toString('utf8') === '%PDF-';
       
+      // First check for encryption signatures before PDF validation
+      if (headerBinary.includes('U2FsdGVkX1') || headerAscii.includes('U2FsdGVkX1') || headerUtf8.includes('U2FsdGVkX1')) {
+        log(`Encrypted upload detected for ${filename}`, 'pdf-processor');
+        throw new Error('This file appears to be encrypted during upload. This usually happens due to browser extensions or security software. Please try: 1) Disable browser extensions temporarily, 2) Use a different browser or incognito mode, 3) Try uploading from a different network, or 4) Use the test PDF provided in the interface.');
+      }
+
       if (!hasValidPDFHeader) {
         log(`No PDF header found in first 20 bytes for ${filename}`, 'pdf-processor');
         
@@ -90,13 +96,6 @@ export class PDFProcessor {
         
         if (!pdfFound) {
           log(`No PDF signature found for ${filename}`, 'pdf-processor');
-          
-          // Check if this looks like encrypted content
-          if (headerBinary.includes('U2FsdGVkX1') || headerAscii.includes('U2FsdGVkX1')) {
-            throw new Error('This file appears to be encrypted during upload. This usually happens due to browser extensions or security software. Please try: 1) Disable browser extensions temporarily, 2) Use a different browser or incognito mode, 3) Try uploading from a different network, or 4) Use the test PDF provided in the interface.');
-          }
-          
-          // For other cases, provide general guidance
           throw new Error('Unable to detect PDF format. Please ensure you are uploading a valid, unprotected PDF file. You can try the test PDF provided in the interface to verify the system is working correctly.');
         }
       } else {

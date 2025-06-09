@@ -14,6 +14,109 @@ export class PDFProcessor {
   private ocrWorker: any = null;
   private pdfParse: any = null;
 
+  async validatePDF(buffer: Buffer, filename: string): Promise<{
+    isValid: boolean;
+    errors: string[];
+    warnings: string[];
+    estimatedTextLength: number;
+    hasText: boolean;
+    isImageBased: boolean;
+  }> {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    let estimatedTextLength = 0;
+    let hasText = false;
+    let isImageBased = false;
+
+    try {
+      // Basic file checks
+      if (buffer.length === 0) {
+        errors.push('File is empty');
+        return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+      }
+
+      if (buffer.length < 1024) {
+        errors.push('File too small to be a valid PDF');
+        return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+      }
+
+      if (buffer.length > 100 * 1024 * 1024) { // 100MB
+        errors.push('File too large (maximum 100MB supported)');
+        return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+      }
+
+      // Check for PDF header
+      const first20Bytes = buffer.subarray(0, 20);
+      const headerBinary = first20Bytes.toString('binary');
+      const headerAscii = first20Bytes.toString('ascii');
+      
+      if (!headerBinary.includes('%PDF-') && !headerAscii.includes('%PDF-')) {
+        // Search deeper for PDF signature
+        let pdfFound = false;
+        for (let i = 0; i < Math.min(buffer.length, 4096); i += 512) {
+          const chunk = buffer.subarray(i, i + 512).toString('binary');
+          if (chunk.includes('%PDF-')) {
+            pdfFound = true;
+            warnings.push('PDF signature found at non-standard location');
+            break;
+          }
+        }
+        
+        if (!pdfFound) {
+          errors.push('Invalid PDF format - no PDF signature found');
+          return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+        }
+      }
+
+      // Check for encryption during upload
+      if (headerBinary.includes('U2FsdGVkX1') || headerAscii.includes('U2FsdGVkX1')) {
+        errors.push('File appears to be encrypted during upload. Try disabling browser extensions or use incognito mode.');
+        return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+      }
+
+      // Try to extract text for estimation
+      try {
+        const pdfParse = await import('pdf-parse');
+        const pdfData = await pdfParse.default(buffer);
+        
+        estimatedTextLength = pdfData.text.length;
+        hasText = estimatedTextLength > 100; // Minimum meaningful text
+        
+        // Estimate if it's image-based
+        const textPerPage = estimatedTextLength / (pdfData.numpages || 1);
+        isImageBased = textPerPage < 50; // Less than 50 chars per page suggests images
+        
+        if (estimatedTextLength > 1000000) { // 1MB of text
+          warnings.push(`Large amount of text detected (${Math.round(estimatedTextLength / 1000)}K characters) - will be split into multiple chunks`);
+        }
+        
+        if (isImageBased) {
+          warnings.push('PDF appears to be image-based - will use OCR processing (slower)');
+        }
+        
+        if (!hasText) {
+          warnings.push('Very little text detected - may require OCR processing');
+        }
+        
+      } catch (parseError: any) {
+        warnings.push(`Could not preview PDF content: ${parseError.message}`);
+      }
+
+      return {
+        isValid: true,
+        errors,
+        warnings,
+        estimatedTextLength,
+        hasText,
+        isImageBased
+      };
+
+    } catch (error: any) {
+      errors.push(`Validation failed: ${error.message}`);
+      return { isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased };
+    }
+  }
+
   async initializePdfParse() {
     try {
       log('PDF parsing library ready', 'pdf-processor');

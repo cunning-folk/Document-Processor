@@ -116,7 +116,7 @@ export default function DocumentUpload() {
     }
   };
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     const allowedTypes = ['pdf', 'txt', 'md'];
     const fileExtension = file.name.toLowerCase().split('.').pop();
     
@@ -136,6 +136,52 @@ export default function DocumentUpload() {
         variant: "destructive"
       });
       return;
+    }
+
+    // For PDFs, run validation check
+    if (fileExtension === 'pdf') {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/api/validate-pdf', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const validation = await response.json();
+        
+        if (!validation.isValid) {
+          toast({
+            title: "PDF Validation Failed",
+            description: validation.errors[0] || "Unable to process this PDF.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        // Show warnings if any
+        if (validation.warnings.length > 0) {
+          toast({
+            title: "PDF Processing Notes",
+            description: validation.warnings[0],
+            variant: "default"
+          });
+        }
+        
+        // Show estimated processing info
+        if (validation.estimatedTextLength > 500000) {
+          toast({
+            title: "Large Document Detected",
+            description: `This PDF contains ${Math.round(validation.estimatedTextLength / 1000)}K characters and will be processed in chunks.`,
+            variant: "default"
+          });
+        }
+        
+      } catch (error) {
+        console.warn('PDF validation failed, proceeding anyway:', error);
+        // Don't block the upload if validation fails
+      }
     }
 
     setSelectedFile(file);

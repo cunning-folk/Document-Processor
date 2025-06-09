@@ -15,6 +15,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start background processor
   backgroundProcessor.start();
 
+  // Validate PDF endpoint - quick check before upload
+  app.post("/api/validate-pdf", upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+
+      const validation = await pdfProcessor.validatePDF(req.file.buffer, req.file.originalname);
+      
+      res.json(validation);
+    } catch (error: any) {
+      log(`PDF validation error: ${error.message}`, "express");
+      res.status(500).json({ 
+        message: "Validation failed", 
+        error: error.message,
+        isValid: false,
+        errors: [error.message],
+        warnings: []
+      });
+    }
+  });
+
   // Process document endpoint
   app.post("/api/process-document", upload.single("file"), async (req, res) => {
     try {

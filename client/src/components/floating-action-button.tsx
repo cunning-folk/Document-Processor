@@ -40,7 +40,7 @@ export function FloatingActionButton() {
       {/* Main FAB */}
       <Button
         size="lg"
-        className={`h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 border-0 ${
+        className={`h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 border-0 animate-float aspect-square flex items-center justify-center p-0 ${
           isExpanded ? 'rotate-45 scale-110' : 'hover:scale-110'
         }`}
         onClick={() => setIsExpanded(!isExpanded)}

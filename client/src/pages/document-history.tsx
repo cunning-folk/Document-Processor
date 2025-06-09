@@ -132,7 +132,7 @@ export default function DocumentHistory() {
   if (isLoading) {
     return (
       <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-6">Document History</h1>
+        <h1 className="text-3xl font-display font-light mb-6">Document History</h1>
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
             <Card key={i}>
@@ -153,7 +153,7 @@ export default function DocumentHistory() {
   if (error) {
     return (
       <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-6">Document History</h1>
+        <h1 className="text-3xl font-display font-light mb-6">Document History</h1>
         <Card>
           <CardContent className="pt-6">
             <p className="text-red-500">Failed to load document history. Please try again.</p>
@@ -166,7 +166,7 @@ export default function DocumentHistory() {
   return (
     <div className="container mx-auto py-4 px-4 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-2">
-        <h1 className="text-2xl sm:text-3xl font-bold">Document History</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-light">Document History</h1>
         <p className="text-sm sm:text-base text-muted-foreground">
           {data?.pagination.totalCount || 0} documents total
         </p>

@@ -78,7 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Chunk the document and create chunk records
-      const maxChunkSize = 50000; // Reduced from 250k to 50k for faster processing
+      const maxChunkSize = 15000; // Safe size to stay well under OpenAI's limits
       const chunks = [];
       
       if (extractedText.length > maxChunkSize) {
@@ -86,9 +86,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let currentChunk = '';
         
         for (const paragraph of paragraphs) {
+          // If adding this paragraph would exceed the limit
           if ((currentChunk + paragraph).length > maxChunkSize && currentChunk.length > 0) {
             chunks.push(currentChunk.trim());
             currentChunk = paragraph;
+          } 
+          // If even a single paragraph is too large, split it by sentences
+          else if (paragraph.length > maxChunkSize) {
+            // Save current chunk if it has content
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trim());
+              currentChunk = '';
+            }
+            
+            // Split large paragraph by sentences
+            const sentences = paragraph.split(/(?<=[.!?])\s+/);
+            let sentenceChunk = '';
+            
+            for (const sentence of sentences) {
+              if ((sentenceChunk + sentence).length > maxChunkSize && sentenceChunk.length > 0) {
+                chunks.push(sentenceChunk.trim());
+                sentenceChunk = sentence;
+              } else {
+                sentenceChunk += (sentenceChunk ? ' ' : '') + sentence;
+              }
+            }
+            
+            if (sentenceChunk.trim()) {
+              currentChunk = sentenceChunk;
+            }
           } else {
             currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
           }

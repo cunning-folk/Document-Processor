@@ -74,6 +74,16 @@ export class BackgroundProcessor {
       
       await storage.updateDocumentChunk(chunk.id, { status: 'processing' });
       
+      // Validate chunk size before processing
+      if (chunk.content.length > 100000) {
+        log(`Chunk ${chunk.chunkIndex + 1} is too large (${chunk.content.length} chars), marking as failed`, "background-processor");
+        await storage.updateDocumentChunk(chunk.id, {
+          status: 'failed',
+          processedContent: `Error: Chunk too large (${chunk.content.length} characters). Please use a smaller document or contact support.`
+        });
+        return;
+      }
+      
       const openai = new OpenAI({ apiKey: document.apiKey });
       
       const isMultipart = totalChunks > 1;

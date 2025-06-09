@@ -154,7 +154,7 @@ export default function DocumentUpload() {
             <FileText className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-display font-light bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
-            Document Processor
+            The Field Processor
           </h1>
           <p className="text-sm font-body text-gray-600 max-w-2xl mx-auto leading-relaxed">
             Transform your documents with AI-powered formatting. Upload PDF, TXT, or MD files and get beautifully structured content.

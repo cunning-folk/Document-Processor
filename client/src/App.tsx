@@ -18,7 +18,7 @@ function Navigation() {
       <div className="container mx-auto px-4 py-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h1 className="text-lg sm:text-xl font-display font-medium bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-in slide-in-from-left-2 duration-700">
-            Document Processor
+            The Field Processor
           </h1>
           <div className="flex gap-2 animate-in slide-in-from-right-2 duration-700 delay-200">
             <Link href="/">

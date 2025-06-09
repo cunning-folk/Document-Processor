@@ -19,6 +19,7 @@ export interface IStorage {
   getDocumentChunks(documentId: number): Promise<DocumentChunk[]>;
   updateDocumentChunk(id: number, updates: Partial<DocumentChunk>): Promise<DocumentChunk | undefined>;
   getChunkByDocumentAndIndex(documentId: number, chunkIndex: number): Promise<DocumentChunk | undefined>;
+  getStuckChunks(stuckThresholdMs: number): Promise<DocumentChunk[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -112,6 +113,19 @@ export class DatabaseStorage implements IStorage {
     }
 
     return deletedCount;
+  }
+
+  async getStuckChunks(stuckThresholdMs: number): Promise<DocumentChunk[]> {
+    const stuckTime = new Date(Date.now() - stuckThresholdMs);
+    
+    const stuckChunks = await db.select()
+      .from(documentChunks)
+      .where(and(
+        eq(documentChunks.status, 'processing'),
+        lt(documentChunks.updatedAt, stuckTime)
+      ));
+    
+    return stuckChunks;
   }
 }
 

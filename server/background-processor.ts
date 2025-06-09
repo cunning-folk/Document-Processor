@@ -5,6 +5,7 @@ import { log } from './vite';
 export class BackgroundProcessor {
   private isProcessing = false;
   private processingInterval: NodeJS.Timeout | null = null;
+  private stuckChunkThreshold = 5 * 60 * 1000; // 5 minutes in milliseconds
 
   start() {
     if (this.processingInterval) return;
@@ -33,6 +34,9 @@ export class BackgroundProcessor {
       if (deletedCount > 0) {
         log(`Cleaned up ${deletedCount} expired documents for privacy`, "background-processor");
       }
+
+      // Check for and recover stuck chunks
+      await this.recoverStuckChunks();
 
       // Find pending chunks to process
       const pendingDocuments = await storage.getDocumentsByStatus('processing');
@@ -185,6 +189,27 @@ export class BackgroundProcessor {
         status: 'failed',
         errorMessage: error.message
       });
+    }
+  }
+
+  async recoverStuckChunks() {
+    try {
+      const stuckChunks = await storage.getStuckChunks(this.stuckChunkThreshold);
+      
+      if (stuckChunks.length > 0) {
+        log(`Found ${stuckChunks.length} stuck chunks, resetting to pending`, "background-processor");
+        
+        for (const chunk of stuckChunks) {
+          await storage.updateDocumentChunk(chunk.id, {
+            status: 'pending',
+            errorMessage: null
+          });
+          
+          log(`Reset stuck chunk ${chunk.chunkIndex + 1} for document ${chunk.documentId}`, "background-processor");
+        }
+      }
+    } catch (error: any) {
+      log(`Error recovering stuck chunks: ${error.message}`, "background-processor");
     }
   }
 

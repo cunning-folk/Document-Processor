@@ -1,8 +1,13 @@
-import { documents, documentChunks, type Document, type InsertDocument, type DocumentChunk, type InsertDocumentChunk } from "@shared/schema";
+import { documents, documentChunks, users, type Document, type InsertDocument, type DocumentChunk, type InsertDocumentChunk, type User, type UpsertUser } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, lt } from "drizzle-orm";
 
 export interface IStorage {
+  // User operations
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+  
+  // Document operations
   getDocument(id: number): Promise<Document | undefined>;
   getUserDocument(id: number, userId: string): Promise<Document | undefined>;
   createDocument(document: InsertDocument): Promise<Document>;
@@ -31,6 +36,13 @@ export class DatabaseStorage implements IStorage {
     return document || undefined;
   }
 
+  async getUserDocument(id: number, userId: string): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents).where(
+      and(eq(documents.id, id), eq(documents.userId, userId))
+    );
+    return document || undefined;
+  }
+
   async createDocument(insertDocument: InsertDocument): Promise<Document> {
     const [document] = await db
       .insert(documents)
@@ -52,6 +64,10 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(documents).where(eq(documents.status, status));
   }
 
+  async getUserDocuments(userId: string): Promise<Document[]> {
+    return await db.select().from(documents).where(eq(documents.userId, userId));
+  }
+
   async getAllDocuments(): Promise<Document[]> {
     return await db.select().from(documents);
   }
@@ -63,6 +79,21 @@ export class DatabaseStorage implements IStorage {
       
       // Then delete the document
       const result = await db.delete(documents).where(eq(documents.id, id));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async deleteUserDocument(id: number, userId: string): Promise<boolean> {
+    try {
+      // First delete all chunks for this document
+      await db.delete(documentChunks).where(eq(documentChunks.documentId, id));
+      
+      // Then delete the document, but only if it belongs to the user
+      const result = await db.delete(documents).where(
+        and(eq(documents.id, id), eq(documents.userId, userId))
+      );
       return true;
     } catch (error) {
       return false;

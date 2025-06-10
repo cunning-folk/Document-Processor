@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { pdfProcessor } from "./pdf-processor";
 import { log } from "./vite";
 import { backgroundProcessor } from "./background-processor";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -12,6 +13,9 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  await setupAuth(app);
+  
   // Start background processor
   backgroundProcessor.start();
 

@@ -37,6 +37,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Retry failed document processing
+  app.post("/api/documents/:id/retry", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      
+      if (document.status !== 'failed') {
+        return res.status(400).json({ message: "Only failed documents can be retried" });
+      }
+      
+      // Reset document status and clear error
+      await storage.updateDocument(documentId, {
+        status: 'processing',
+        errorMessage: null,
+        processedChunks: 0
+      });
+      
+      // Reset all failed chunks to pending
+      const chunks = await storage.getDocumentChunks(documentId);
+      for (const chunk of chunks) {
+        if (chunk.status === 'failed') {
+          await storage.updateDocumentChunk(chunk.id, {
+            status: 'pending',
+            errorMessage: null,
+            processedContent: null
+          });
+        }
+      }
+      
+      log(`Document ${documentId} retry initiated`, "express");
+      res.json({ message: "Document retry initiated", documentId });
+    } catch (error: any) {
+      log(`Error retrying document: ${error.message}`, "express");
+      res.status(500).json({ message: "Failed to retry document", error: error.message });
+    }
+  });
+
   // Process document endpoint
   app.post("/api/process-document", upload.single("file"), async (req, res) => {
     try {

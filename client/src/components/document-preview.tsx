@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Copy, Download, Eye, EyeOff, FileText, Calendar, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
-import ReactMarkdown from "react-markdown";
+
 
 interface DocumentPreviewProps {
   document: {
@@ -131,9 +131,9 @@ export function DocumentPreview({ document, onRetry }: DocumentPreviewProps) {
             
             {isExpanded && (
               <div className="border rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
-                <ReactMarkdown className="prose prose-sm max-w-none">
-                  {document.processedMarkdown}
-                </ReactMarkdown>
+                <div className="prose prose-sm max-w-none">
+                  <pre className="whitespace-pre-wrap">{document.processedMarkdown}</pre>
+                </div>
               </div>
             )}
             

@@ -185,10 +185,28 @@ export class BackgroundProcessor {
       
     } catch (error: any) {
       log(`Error processing chunk ${chunk.chunkIndex + 1}: ${error.message}`, "background-processor");
-      await storage.updateDocumentChunk(chunk.id, {
-        status: 'failed',
-        errorMessage: error.message
-      });
+      
+      // Implement retry logic for transient errors
+      const isRetryable = error.message.includes('rate limit') || 
+                         error.message.includes('timeout') || 
+                         error.message.includes('network') ||
+                         error.message.includes('503') ||
+                         error.message.includes('502');
+      
+      if (isRetryable) {
+        // Mark for retry by resetting to pending status
+        await storage.updateDocumentChunk(chunk.id, {
+          status: 'pending',
+          errorMessage: `Retrying: ${error.message}`
+        });
+        log(`Chunk ${chunk.chunkIndex + 1} marked for retry`, "background-processor");
+      } else {
+        await storage.updateDocumentChunk(chunk.id, {
+          status: 'failed',
+          errorMessage: error.message
+        });
+        log(`Chunk ${chunk.chunkIndex + 1} marked as failed`, "background-processor");
+      }
     }
   }
 

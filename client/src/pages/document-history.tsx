@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Trash2, Download, FileText, Clock, AlertCircle, CheckCircle, Shield } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Trash2, Download, FileText, Clock, AlertCircle, CheckCircle, Shield, RefreshCw, Copy, Eye } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 

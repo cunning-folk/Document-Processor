@@ -39,6 +39,35 @@ export default function DocumentHistory() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const retryMutation = useMutation({
+    mutationFn: async (documentId: number) => {
+      const response = await fetch(`/api/documents/${documentId}/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to retry document');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Retry Initiated",
+        description: "Document processing has been restarted.",
+        variant: "default"
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Retry Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/documents", currentPage],
     queryFn: async (): Promise<DocumentHistoryResponse> => {
@@ -227,16 +256,57 @@ export default function DocumentHistory() {
                       )}
                     </div>
                     <div className="flex flex-col sm:flex-row gap-2">
-                      {doc.status === 'completed' && doc.processedMarkdown && (
+                      {doc.status === 'processing' && doc.totalChunks && doc.processedChunks !== null && (
+                        <div className="flex-1">
+                          <Progress 
+                            value={(doc.processedChunks / doc.totalChunks) * 100} 
+                            className="h-2 mb-2" 
+                          />
+                          <p className="text-xs text-gray-600 font-mono">
+                            {Math.round((doc.processedChunks / doc.totalChunks) * 100)}% complete
+                          </p>
+                        </div>
+                      )}
+                      {doc.status === 'failed' && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDownload(doc.id, doc.filename)}
-                          className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-green-50 hover:bg-green-100 animate-in slide-in-from-bottom-2 duration-300 delay-500"
+                          onClick={() => retryMutation.mutate(doc.id)}
+                          disabled={retryMutation.isPending}
+                          className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-blue-50 hover:bg-blue-100 animate-in slide-in-from-bottom-2 duration-300 delay-400"
                         >
-                          <Download className="h-4 w-4 mr-2 transition-transform duration-200 hover:translate-y-0.5" />
-                          Download
+                          <RefreshCw className={`h-4 w-4 mr-2 ${retryMutation.isPending ? 'animate-spin' : ''}`} />
+                          {retryMutation.isPending ? 'Retrying...' : 'Retry'}
                         </Button>
+                      )}
+                      {doc.status === 'completed' && doc.processedMarkdown && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(doc.processedMarkdown || '');
+                              toast({
+                                title: "Copied",
+                                description: "Document content copied to clipboard.",
+                                variant: "default"
+                              });
+                            }}
+                            className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-gray-50 hover:bg-gray-100 animate-in slide-in-from-bottom-2 duration-300 delay-400"
+                          >
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(doc.id, doc.filename)}
+                            className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-green-50 hover:bg-green-100 animate-in slide-in-from-bottom-2 duration-300 delay-500"
+                          >
+                            <Download className="h-4 w-4 mr-2 transition-transform duration-200 hover:translate-y-0.5" />
+                            Download
+                          </Button>
+                        </>
                       )}
                       <Button
                         variant="outline"

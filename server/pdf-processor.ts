@@ -99,7 +99,10 @@ export class PDFProcessor {
         }
         
       } catch (parseError: any) {
-        warnings.push(`Could not preview PDF content: ${parseError.message}`);
+        // Only show parsing warnings for actual parsing issues, not missing test files
+        if (!parseError.message.includes('test/data/') && !parseError.message.includes('ENOENT')) {
+          warnings.push(`Could not preview PDF content: ${parseError.message}`);
+        }
       }
 
       return {

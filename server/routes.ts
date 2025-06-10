@@ -16,6 +16,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
   
+  // Auth routes
+  app.get('/api/auth/user', async (req: any, res) => {
+    try {
+      if (!req.isAuthenticated() || !req.user?.claims?.sub) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+  
   // Start background processor
   backgroundProcessor.start();
 
@@ -134,8 +150,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No text could be extracted from the file" });
       }
 
-      // Create document record
+      // Create document record with user ID
+      const userId = (req.user as any)?.claims?.sub || 'demo_user'; // Fallback for demo
       const document = await storage.createDocument({
+        userId,
         filename: req.file.originalname,
         originalText: extractedText,
         status: "pending",
@@ -335,17 +353,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all documents (history)
+  // Get user's documents (history) - user-specific
   app.get("/api/documents", async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = (page - 1) * limit;
       
-      // Get all documents ordered by creation date (newest first)
-      const allDocuments = await storage.getAllDocuments();
-      const totalCount = allDocuments.length;
-      const documents = allDocuments
+      // Get user ID from auth or fallback for demo
+      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      
+      // Get user's documents ordered by creation date (newest first)
+      const userDocuments = await storage.getUserDocuments(userId);
+      const totalCount = userDocuments.length;
+      const documents = userDocuments
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(offset, offset + limit);
       
@@ -363,11 +384,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get document by ID
+  // Get user's document by ID - user-specific
   app.get("/api/documents/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const document = await storage.getDocument(id);
+      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      
+      const document = await storage.getUserDocument(id, userId);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -379,11 +402,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Download processed document as markdown file
+  // Download user's processed document as markdown file - user-specific
   app.get("/api/documents/:id/download", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const document = await storage.getDocument(id);
+      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      
+      const document = await storage.getUserDocument(id, userId);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });

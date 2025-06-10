@@ -4,11 +4,14 @@ import { eq, and, lt } from "drizzle-orm";
 
 export interface IStorage {
   getDocument(id: number): Promise<Document | undefined>;
+  getUserDocument(id: number, userId: string): Promise<Document | undefined>;
   createDocument(document: InsertDocument): Promise<Document>;
   updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined>;
   getDocumentsByStatus(status: string): Promise<Document[]>;
+  getUserDocuments(userId: string): Promise<Document[]>;
   getAllDocuments(): Promise<Document[]>;
   deleteDocument(id: number): Promise<boolean>;
+  deleteUserDocument(id: number, userId: string): Promise<boolean>;
   
   // Privacy and cleanup
   getExpiredDocuments(): Promise<Document[]>;

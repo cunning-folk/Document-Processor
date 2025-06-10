@@ -11,6 +11,7 @@ export const users = pgTable("users", {
 
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
   filename: text("filename").notNull(),
   originalText: text("original_text").notNull(),
   processedMarkdown: text("processed_markdown"),
@@ -38,7 +39,20 @@ export const documentChunks = pgTable("document_chunks", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const usersRelations = {
+  documents: {
+    type: "one-to-many",
+    table: documents,
+    foreignKey: "userId"
+  }
+};
+
 export const documentsRelations = {
+  user: {
+    type: "many-to-one",
+    table: users,
+    foreignKey: "userId"
+  },
   chunks: {
     type: "one-to-many",
     table: documentChunks,
@@ -60,6 +74,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 });
 
 export const insertDocumentSchema = createInsertSchema(documents).pick({
+  userId: true,
   filename: true,
   originalText: true,
   processedMarkdown: true,

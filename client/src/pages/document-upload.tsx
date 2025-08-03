@@ -117,13 +117,13 @@ export default function DocumentUpload() {
   };
 
   const handleFileSelect = async (file: File) => {
-    const allowedTypes = ['pdf', 'txt', 'md'];
+    const allowedTypes = ['pdf', 'txt', 'md', 'markdown'];
     const fileExtension = file.name.toLowerCase().split('.').pop();
     
     if (!allowedTypes.includes(fileExtension || '')) {
       toast({
         title: "Invalid File Type",
-        description: "Please select a PDF, TXT, or MD file.",
+        description: "Please select a PDF, TXT, MD, or MARKDOWN file.",
         variant: "destructive"
       });
       return;
@@ -138,50 +138,48 @@ export default function DocumentUpload() {
       return;
     }
 
-    // For PDFs, run validation check
-    if (fileExtension === 'pdf') {
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const response = await fetch('/api/validate-pdf', {
-          method: 'POST',
-          body: formData
+    // Run validation check for all file types
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch('/api/validate-file', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const validation = await response.json();
+      
+      if (!validation.isValid) {
+        toast({
+          title: "File Validation Failed",
+          description: validation.errors[0] || "Unable to process this file.",
+          variant: "destructive"
         });
-        
-        const validation = await response.json();
-        
-        if (!validation.isValid) {
-          toast({
-            title: "PDF Validation Failed",
-            description: validation.errors[0] || "Unable to process this PDF.",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        // Show warnings if any
-        if (validation.warnings.length > 0) {
-          toast({
-            title: "PDF Processing Notes",
-            description: validation.warnings[0],
-            variant: "default"
-          });
-        }
-        
-        // Show estimated processing info
-        if (validation.estimatedTextLength > 500000) {
-          toast({
-            title: "Large Document Detected",
-            description: `This PDF contains ${Math.round(validation.estimatedTextLength / 1000)}K characters and will be processed in chunks.`,
-            variant: "default"
-          });
-        }
-        
-      } catch (error) {
-        console.warn('PDF validation failed, proceeding anyway:', error);
-        // Don't block the upload if validation fails
+        return;
       }
+      
+      // Show warnings if any
+      if (validation.warnings.length > 0) {
+        toast({
+          title: `${fileExtension?.toUpperCase()} Processing Notes`,
+          description: validation.warnings[0],
+          variant: "default"
+        });
+      }
+      
+      // Show estimated processing info
+      if (validation.estimatedTextLength > 500000) {
+        toast({
+          title: "Large Document Detected",
+          description: `This file contains ${Math.round(validation.estimatedTextLength / 1000)}K characters and will be processed in chunks.`,
+          variant: "default"
+        });
+      }
+      
+    } catch (error) {
+      console.warn('File validation failed, proceeding anyway:', error);
+      // Don't block the upload if validation fails
     }
 
     setSelectedFile(file);
@@ -200,7 +198,7 @@ export default function DocumentUpload() {
             Document Processor
           </h1>
           <p className="text-sm font-body text-gray-600 max-w-2xl mx-auto leading-relaxed">
-            Transform your documents with AI-powered formatting. Upload PDF, TXT, or MD files and get beautifully structured content.
+            Transform your documents with AI-powered formatting. Upload PDF, TXT, MD, or MARKDOWN files and get beautifully structured content.
           </p>
         </div>
 
@@ -316,7 +314,7 @@ export default function DocumentUpload() {
                     </p>
                     <input
                       type="file"
-                      accept=".pdf,.txt,.md"
+                      accept=".pdf,.txt,.md,.markdown"
                       onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                       className="hidden"
                       id="file-upload"
@@ -333,7 +331,7 @@ export default function DocumentUpload() {
                     </label>
                   </div>
                   <p className="text-xs font-mono text-gray-400">
-                    Supports PDF, TXT, and MD files up to 50MB
+                    Supports PDF, TXT, MD, and MARKDOWN files up to 50MB
                   </p>
                 </div>
               )}

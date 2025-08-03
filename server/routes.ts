@@ -35,18 +35,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start background processor
   backgroundProcessor.start();
 
-  // Validate PDF endpoint - quick check before upload
-  app.post("/api/validate-pdf", upload.single('file'), async (req, res) => {
+  // Validate file endpoint - quick check before upload
+  app.post("/api/validate-file", upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file provided" });
       }
 
-      const validation = await pdfProcessor.validatePDF(req.file.buffer, req.file.originalname);
+      const fileExtension = req.file.originalname.toLowerCase().split('.').pop();
       
-      res.json(validation);
+      // For PDF files, use the full PDF validation
+      if (fileExtension === 'pdf') {
+        const validation = await pdfProcessor.validatePDF(req.file.buffer, req.file.originalname);
+        res.json(validation);
+        return;
+      }
+      
+      // For text-based files (TXT, MD, MARKDOWN), do basic validation
+      if (['txt', 'md', 'markdown'].includes(fileExtension || '')) {
+        const errors: string[] = [];
+        const warnings: string[] = [];
+        
+        // Basic file checks
+        if (req.file.buffer.length === 0) {
+          errors.push('File is empty');
+          return res.json({ isValid: false, errors, warnings, estimatedTextLength: 0, hasText: false, isImageBased: false });
+        }
+        
+        if (req.file.buffer.length > 50 * 1024 * 1024) { // 50MB
+          errors.push('File too large (maximum 50MB supported)');
+          return res.json({ isValid: false, errors, warnings, estimatedTextLength: 0, hasText: false, isImageBased: false });
+        }
+        
+        // Try to decode as UTF-8
+        let textContent = '';
+        try {
+          textContent = req.file.buffer.toString('utf-8');
+        } catch (decodeError) {
+          errors.push('File encoding not supported - please use UTF-8 text files');
+          return res.json({ isValid: false, errors, warnings, estimatedTextLength: 0, hasText: false, isImageBased: false });
+        }
+        
+        const estimatedTextLength = textContent.length;
+        const hasText = estimatedTextLength > 10; // Minimum meaningful text
+        
+        if (!hasText) {
+          errors.push('File contains no readable text content');
+          return res.json({ isValid: false, errors, warnings, estimatedTextLength, hasText, isImageBased: false });
+        }
+        
+        // Add helpful warnings
+        if (estimatedTextLength > 1000000) { // 1MB of text
+          warnings.push(`Large amount of text detected (${Math.round(estimatedTextLength / 1000)}K characters) - will be split into multiple chunks`);
+        }
+        
+        if (fileExtension === 'md' || fileExtension === 'markdown') {
+          warnings.push('Markdown formatting will be cleaned and restructured by OpenAI');
+        }
+        
+        log(`Text file validation successful for ${req.file.originalname}: ${estimatedTextLength} characters`, "express");
+        res.json({
+          isValid: true,
+          errors,
+          warnings,
+          estimatedTextLength,
+          hasText,
+          isImageBased: false
+        });
+        return;
+      }
+      
+      // Unsupported file type
+      res.json({
+        isValid: false,
+        errors: ['Unsupported file type. Please upload .pdf, .txt, .md, or .markdown files.'],
+        warnings: [],
+        estimatedTextLength: 0,
+        hasText: false,
+        isImageBased: false
+      });
+      
     } catch (error: any) {
-      log(`PDF validation error: ${error.message}`, "express");
+      log(`File validation error: ${error.message}`, "express");
       res.status(500).json({ 
         message: "Validation failed", 
         error: error.message,

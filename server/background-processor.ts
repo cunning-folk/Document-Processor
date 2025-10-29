@@ -92,31 +92,57 @@ export class BackgroundProcessor {
       
       const isMultipart = totalChunks > 1;
       const chunkPrompt = isMultipart 
-        ? `Clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. IMPORTANT: Preserve ALL text content - do not remove, condense, or summarize anything. This is part ${chunk.chunkIndex + 1} of ${totalChunks} from a larger document. Here is the text:\n\n${chunk.content}`
-        : `Clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. IMPORTANT: Preserve ALL text content - do not remove, condense, or summarize anything. Here is the text:\n\n${chunk.content}`;
+        ? `Reformat this text with proper markdown. Do NOT remove ANY content. Just fix line breaks and add markdown formatting. Keep every single word, number, and character from the input. This is part ${chunk.chunkIndex + 1} of ${totalChunks}.\n\nText to reformat:\n\n${chunk.content}`
+        : `Reformat this text with proper markdown. Do NOT remove ANY content. Just fix line breaks and add markdown formatting. Keep every single word, number, and character from the input.\n\nText to reformat:\n\n${chunk.content}`;
 
       let processedContent: string;
 
+      // Check if this is a retry for low retention
+      const isRetry = chunk.errorMessage?.includes('LOW_RETENTION_RETRY');
+      const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
+      
       try {
-        // Try direct chat completion first (faster)
+        // Use gpt-4o for better instruction following, especially on retries
+        const modelToUse = (isRetry || retryCount > 0) ? "gpt-4o" : "gpt-4o-mini";
+        
         const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: modelToUse,
           messages: [
             {
               role: "system",
-              content: "You are a document formatting assistant. You clean messy text (often from PDFs) by: fixing line breaks in the middle of sentences, removing hyphens at line ends and joining words, restoring paragraphs, applying clean markdown (e.g., ## for section headers, * for bullets). CRITICAL: You must preserve ALL content from the original text - do not remove or summarize anything. Even if text appears repetitive (like headers, footers, page numbers), you MUST keep it. Your job is ONLY to fix formatting issues, NOT to remove content. Always output valid markdown that contains 100% of the original text content."
+              content: "You are a text reformatter that ONLY fixes formatting - you do NOT edit, remove, or condense content.\n\nYour ONLY allowed actions:\n1. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')\n2. Join sentences broken across lines\n3. Add markdown formatting (## headers, * bullets, etc.)\n\nSTRICTLY FORBIDDEN actions:\n1. Removing repetitive text (headers, footers, page numbers) - keep ALL of it\n2. Removing OCR errors or garbled text - keep ALL of it\n3. Summarizing or condensing any content\n4. Removing anything that seems redundant\n5. Correcting spelling or grammar\n\nYou are NOT a cleanup tool. You are a reformatter. The output text length should be nearly identical to the input. If you're removing more than 5% of characters, you're doing it wrong."
             },
             {
               role: "user",
               content: chunkPrompt
             }
           ],
-          temperature: 0.3,
+          temperature: 0,
           max_tokens: 16000
         });
 
         processedContent = response.choices[0].message.content || chunk.content;
-        log(`Completed chunk ${chunk.chunkIndex + 1} using direct API for document ${document.id}`, "background-processor");
+        
+        // Validate content retention
+        const originalLength = chunk.content.length;
+        const processedLength = processedContent.length;
+        const retentionRate = processedLength / originalLength;
+        
+        log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${originalLength} chars) using ${modelToUse}`, "background-processor");
+        
+        // If retention is too low and we haven't retried too many times, mark for retry
+        if (retentionRate < 0.95 && retryCount < 2) {
+          const newRetryCount = retryCount + 1;
+          log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
+          
+          await storage.updateDocumentChunk(chunk.id, {
+            status: 'pending',
+            errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
+          });
+          return; // Exit without marking as completed
+        }
+        
+        log(`Completed chunk ${chunk.chunkIndex + 1} using ${modelToUse} for document ${document.id}`, "background-processor");
 
       } catch (directApiError) {
         log(`Direct API failed, trying assistant for chunk ${chunk.chunkIndex + 1}: ${directApiError}`, "background-processor");

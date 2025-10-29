@@ -92,8 +92,8 @@ export class BackgroundProcessor {
       
       const isMultipart = totalChunks > 1;
       const chunkPrompt = isMultipart 
-        ? `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. This is part ${chunk.chunkIndex + 1} of ${totalChunks} from a larger document. Here is the text:\n\n${chunk.content}`
-        : `Please clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. Here is the text:\n\n${chunk.content}`;
+        ? `Clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. IMPORTANT: Preserve ALL text content - do not remove, condense, or summarize anything. This is part ${chunk.chunkIndex + 1} of ${totalChunks} from a larger document. Here is the text:\n\n${chunk.content}`
+        : `Clean up this text by fixing paragraph breaks, removing hyphens from line breaks, and formatting it as proper markdown. IMPORTANT: Preserve ALL text content - do not remove, condense, or summarize anything. Here is the text:\n\n${chunk.content}`;
 
       let processedContent: string;
 
@@ -104,7 +104,7 @@ export class BackgroundProcessor {
           messages: [
             {
               role: "system",
-              content: "You are a document formatting assistant. You clean messy text (often from PDFs) by: fixing line breaks in the middle of sentences, removing hyphens at line ends and joining words, restoring paragraphs, applying clean markdown (e.g., ## for section headers, * for bullets). Always output valid markdown. Do not destroy text."
+              content: "You are a document formatting assistant. You clean messy text (often from PDFs) by: fixing line breaks in the middle of sentences, removing hyphens at line ends and joining words, restoring paragraphs, applying clean markdown (e.g., ## for section headers, * for bullets). CRITICAL: You must preserve ALL content from the original text - do not remove or summarize anything. Even if text appears repetitive (like headers, footers, page numbers), you MUST keep it. Your job is ONLY to fix formatting issues, NOT to remove content. Always output valid markdown that contains 100% of the original text content."
             },
             {
               role: "user",

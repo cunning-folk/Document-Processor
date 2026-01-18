@@ -308,36 +308,58 @@ export class PDFProcessor {
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
     // Use Ghostscript-based text extraction since pdftotext isn't available
     const execAsync = promisify(exec);
+    const timeout = 60000; // 60 second timeout for Ghostscript operations
+    
+    const tempPdfPath = `/tmp/extract_${Date.now()}.pdf`;
+    const tempTextPath = `/tmp/extract_${Date.now()}.txt`;
+    
+    // Helper to clean up temp files
+    const cleanup = () => {
+      try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+      try { if (fs.existsSync(tempTextPath)) fs.unlinkSync(tempTextPath); } catch (e) {}
+    };
     
     try {
-      const tempPdfPath = `/tmp/extract_${Date.now()}.pdf`;
-      const tempTextPath = `/tmp/extract_${Date.now()}.txt`;
-      
       fs.writeFileSync(tempPdfPath, buffer);
       
-      // Extract text using Ghostscript
-      await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}" 2>/dev/null`);
+      // Extract text using Ghostscript with timeout
+      try {
+        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}"`, {
+          timeout,
+          killSignal: 'SIGKILL'
+        });
+      } catch (gsError: any) {
+        if (gsError.killed) {
+          log(`Ghostscript text extraction timed out after ${timeout}ms`, 'pdf-processor');
+          throw new Error('Text extraction timed out - PDF may be too complex');
+        }
+        log(`Ghostscript error: ${gsError.stderr || gsError.message}`, 'pdf-processor');
+        throw gsError;
+      }
       
       if (fs.existsSync(tempTextPath)) {
         const extractedText = fs.readFileSync(tempTextPath, 'utf8');
         
-        // Get page count using Ghostscript
+        // Get page count using Ghostscript with timeout
         let pageCount = 1;
         try {
-          const pageCountResult = await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dNODISPLAY -c "(\`${tempPdfPath}\`) (r) file runpdfbegin pdfpagecount = quit"`);
+          const pageCountResult = await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dNODISPLAY -c "(\`${tempPdfPath}\`) (r) file runpdfbegin pdfpagecount = quit"`, {
+            timeout: 10000, // 10 second timeout for page count
+            killSignal: 'SIGKILL'
+          });
           const count = parseInt(pageCountResult.stdout.trim(), 10);
           if (!isNaN(count) && count > 0) {
             pageCount = count;
           }
-        } catch (countError) {
+        } catch (countError: any) {
           // Fallback: estimate from file size
+          log(`Page count failed, estimating from file size: ${countError.message}`, 'pdf-processor');
           const stats = fs.statSync(tempPdfPath);
           pageCount = Math.max(1, Math.floor(stats.size / 50000)); // Rough estimate
         }
         
         // Cleanup
-        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
-        if (fs.existsSync(tempTextPath)) fs.unlinkSync(tempTextPath);
+        cleanup();
         
         if (extractedText.trim().length < 10) {
           throw new Error('Text extraction yielded minimal content');
@@ -351,6 +373,7 @@ export class PDFProcessor {
         throw new Error('Text extraction failed - no output file generated');
       }
     } catch (error: any) {
+      cleanup(); // Always cleanup on error
       throw new Error(`PDF text extraction failed: ${error.message}`);
     }
   }

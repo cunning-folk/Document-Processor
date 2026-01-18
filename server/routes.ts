@@ -7,6 +7,17 @@ import { log } from "./vite";
 import { backgroundProcessor } from "./background-processor";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 
+// Sanitize text for PostgreSQL - removes null bytes and other invalid UTF-8 sequences
+function sanitizeTextForDB(text: string): string {
+  // Remove null bytes (0x00) which PostgreSQL text fields can't store
+  // Also remove other control characters that might cause issues
+  return text
+    .replace(/\x00/g, '') // Remove null bytes
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove other control chars except tab, newline, carriage return
+    .replace(/\uFFFD/g, '') // Remove replacement characters
+    .replace(/[\uD800-\uDFFF]/g, ''); // Remove lone surrogates
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
@@ -220,12 +231,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No text could be extracted from the file" });
       }
 
+      // Sanitize text to remove null bytes and invalid characters for PostgreSQL
+      const sanitizedText = sanitizeTextForDB(extractedText);
+
       // Create document record with user ID
       const userId = (req.user as any)?.claims?.sub || 'demo_user'; // Fallback for demo
       const document = await storage.createDocument({
         userId,
         filename: req.file.originalname,
-        originalText: extractedText,
+        originalText: sanitizedText,
         status: "pending",
         apiKey,
         assistantId,
@@ -304,12 +318,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "processing"
       });
 
-      // Create chunk records
+      // Create chunk records (sanitize each chunk to be safe)
       for (let i = 0; i < chunks.length; i++) {
         await storage.createDocumentChunk({
           documentId: document.id,
           chunkIndex: i,
-          content: chunks[i],
+          content: sanitizeTextForDB(chunks[i]),
           status: "pending"
         });
       }

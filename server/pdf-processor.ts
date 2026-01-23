@@ -10,6 +10,55 @@ interface PDFProcessingResult {
   method: 'text-extraction' | 'ocr' | 'hybrid' | 'normalized-text-extraction';
 }
 
+// Detect if extracted text is gibberish from failed font decoding
+function isGibberishText(text: string): boolean {
+  if (!text || text.length < 100) return false;
+  
+  // Sample the text for analysis
+  const sample = text.slice(0, Math.min(5000, text.length));
+  
+  // Count suspicious patterns that indicate font decoding failure
+  let suspiciousScore = 0;
+  
+  // Pattern 1: Very high ratio of uppercase consonant clusters without vowels
+  // e.g., "SNR NEN FN INNIS NET" - gibberish from failed Tibetan font decode
+  const consonantClusters = sample.match(/\b[B-DF-HJ-NP-TV-Z]{3,}\b/gi) || [];
+  const words = sample.match(/\b\w+\b/g) || [];
+  if (words.length > 20 && consonantClusters.length / words.length > 0.3) {
+    suspiciousScore += 3;
+  }
+  
+  // Pattern 2: Excessive use of special characters in a row (= = = or similar)
+  const repeatedSymbols = (sample.match(/[=\-_\*\+]{3,}/g) || []).length;
+  if (repeatedSymbols > 5) {
+    suspiciousScore += 2;
+  }
+  
+  // Pattern 3: Unusual character frequency - too many uppercase letters
+  const uppercaseRatio = (sample.match(/[A-Z]/g) || []).length / sample.length;
+  if (uppercaseRatio > 0.5 && sample.length > 200) {
+    suspiciousScore += 2;
+  }
+  
+  // Pattern 4: Very few actual English words in a seemingly English text
+  // Common words that should appear if it's real English
+  const commonWords = ['the', 'and', 'is', 'to', 'of', 'a', 'in', 'that', 'it', 'for'];
+  const lowerSample = sample.toLowerCase();
+  const commonWordCount = commonWords.filter(w => lowerSample.includes(` ${w} `)).length;
+  if (words.length > 50 && commonWordCount < 2) {
+    suspiciousScore += 2;
+  }
+  
+  // Pattern 5: Check for actual Tibetan Unicode (U+0F00 to U+0FFF) - this is GOOD, not gibberish
+  const tibetanChars = sample.match(/[\u0F00-\u0FFF]/g) || [];
+  if (tibetanChars.length > 10) {
+    // Has real Tibetan characters - reduce suspicion
+    suspiciousScore -= 3;
+  }
+  
+  return suspiciousScore >= 4;
+}
+
 export class PDFProcessor {
   private ocrWorker: any = null;
   private pdfParse: any = null;
@@ -129,16 +178,32 @@ export class PDFProcessor {
     }
   }
 
-  async initializeOCR() {
-    if (this.ocrWorker) return;
+  async initializeOCR(languages: string[] = ['eng']) {
+    if (this.ocrWorker) {
+      await this.ocrWorker.terminate();
+      this.ocrWorker = null;
+    }
 
     try {
       const { createWorker } = await import('tesseract.js');
-      this.ocrWorker = await createWorker('eng');
-      log('OCR worker initialized', 'pdf-processor');
+      // Join languages for multi-language support (e.g., 'eng+bod' for English + Tibetan)
+      const langString = languages.join('+');
+      this.ocrWorker = await createWorker(langString);
+      log(`OCR worker initialized with languages: ${langString}`, 'pdf-processor');
     } catch (error: any) {
-      log(`Failed to initialize OCR: ${error.message}`, 'pdf-processor');
-      throw new Error('OCR initialization failed');
+      log(`Failed to initialize OCR with ${languages.join('+')}: ${error.message}`, 'pdf-processor');
+      // Fallback to English only if multi-language fails
+      if (languages.length > 1) {
+        try {
+          const { createWorker } = await import('tesseract.js');
+          this.ocrWorker = await createWorker('eng');
+          log('OCR worker initialized with English fallback', 'pdf-processor');
+        } catch (fallbackError: any) {
+          throw new Error('OCR initialization failed');
+        }
+      } else {
+        throw new Error('OCR initialization failed');
+      }
     }
   }
 
@@ -236,6 +301,9 @@ export class PDFProcessor {
       }
       
       // Step 2: Try text extraction on preprocessed PDF
+      let needsOCR = false;
+      let useMultiLanguageOCR = false;
+      
       try {
         const textResult = await this.extractTextFromPDF(processingBuffer);
         const extractedText = textResult.text.trim();
@@ -246,18 +314,27 @@ export class PDFProcessor {
           throw new Error('This PDF contains encrypted content. Please save it as an unprotected PDF using your PDF viewer\'s "Print to PDF" option and try again.');
         }
         
-        if (extractedText.length >= 50) {
+        // Check for gibberish from failed font decoding (common with Tibetan/Sanskrit PDFs)
+        if (extractedText.length >= 50 && isGibberishText(extractedText)) {
+          log(`Detected gibberish text from font decoding failure for ${filename}, will use OCR`, 'pdf-processor');
+          needsOCR = true;
+          useMultiLanguageOCR = true; // Use Tibetan + English OCR
+        }
+        
+        if (extractedText.length >= 50 && !needsOCR) {
           log(`Text extraction successful for ${filename} using ${normalizationUsed ? 'preprocessed' : 'original'} PDF`, 'pdf-processor');
           return {
             text: textResult.text,
             totalPages: textResult.totalPages,
             method: normalizationUsed ? 'normalized-text-extraction' : 'text-extraction'
           };
-        } else {
+        } else if (!needsOCR) {
           log(`Text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
+          needsOCR = true;
         }
       } catch (textError: any) {
         log(`Text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
+        needsOCR = true;
         
         // Check for specific error types and provide helpful messages
         const errorMessage = textError.message.toLowerCase();
@@ -275,8 +352,10 @@ export class PDFProcessor {
         throw new Error('This PDF contains encrypted content that cannot be processed. Please save it as an unprotected PDF using "Print to PDF" and try again.');
       }
 
-      log(`Attempting OCR processing on ${normalizationUsed ? 'preprocessed' : 'original'} PDF for ${filename}`, 'pdf-processor');
-      const ocrResult = await this.extractTextWithOCR(processingBuffer, filename);
+      // Use multi-language OCR if gibberish was detected (likely Tibetan/Sanskrit PDF)
+      const ocrLanguages = useMultiLanguageOCR ? ['eng', 'bod', 'san'] : ['eng'];
+      log(`Attempting OCR processing on ${normalizationUsed ? 'preprocessed' : 'original'} PDF for ${filename} with languages: ${ocrLanguages.join('+')}`, 'pdf-processor');
+      const ocrResult = await this.extractTextWithOCR(processingBuffer, filename, ocrLanguages);
       
       return {
         text: ocrResult.text,
@@ -378,8 +457,8 @@ export class PDFProcessor {
     }
   }
 
-  private async extractTextWithOCR(buffer: Buffer, filename: string): Promise<{ text: string; totalPages: number }> {
-    await this.initializeOCR();
+  private async extractTextWithOCR(buffer: Buffer, filename: string, languages: string[] = ['eng']): Promise<{ text: string; totalPages: number }> {
+    await this.initializeOCR(languages);
     const execAsync = promisify(exec);
 
     try {

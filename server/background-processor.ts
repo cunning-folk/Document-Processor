@@ -91,9 +91,20 @@ export class BackgroundProcessor {
       const openai = new OpenAI({ apiKey: document.apiKey });
       
       const isMultipart = totalChunks > 1;
-      const chunkPrompt = isMultipart 
-        ? `Reformat this text with proper markdown. Do NOT remove ANY content. Just fix line breaks and add markdown formatting. Keep every single word, number, and character from the input. This is part ${chunk.chunkIndex + 1} of ${totalChunks}.\n\nText to reformat:\n\n${chunk.content}`
-        : `Reformat this text with proper markdown. Do NOT remove ANY content. Just fix line breaks and add markdown formatting. Keep every single word, number, and character from the input.\n\nText to reformat:\n\n${chunk.content}`;
+      const partInfo = isMultipart ? `This is part ${chunk.chunkIndex + 1} of ${totalChunks}.\n\n` : '';
+      const chunkPrompt = `${partInfo}Reformat this text with proper markdown formatting. Preserve ALL content exactly.
+
+CRITICAL REQUIREMENTS:
+1. PRESERVE all Tibetan script (ཆོས་ཉིད་, བདེན་མེད་, etc.) exactly as written - do NOT transliterate or remove
+2. NORMALIZE Sanskrit/Pali diacritics to proper Unicode: Śūnyatā, Mahāsiddha, Rigpa, Prajñāpāramitā, Dharmakāya, etc.
+3. Add proper paragraph spacing between logical sections
+4. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')
+5. Apply clean markdown formatting (## headers, proper spacing)
+6. Keep phonetic transliterations alongside Tibetan script if present
+
+Text to reformat:
+
+${chunk.content}`;
 
       let processedContent: string;
 
@@ -110,7 +121,25 @@ export class BackgroundProcessor {
           messages: [
             {
               role: "system",
-              content: "You are a text reformatter that ONLY fixes formatting - you do NOT edit, remove, or condense content.\n\nYour ONLY allowed actions:\n1. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')\n2. Join sentences broken across lines\n3. Add markdown formatting (## headers, * bullets, etc.)\n\nSTRICTLY FORBIDDEN actions:\n1. Removing repetitive text (headers, footers, page numbers) - keep ALL of it\n2. Removing OCR errors or garbled text - keep ALL of it\n3. Summarizing or condensing any content\n4. Removing anything that seems redundant\n5. Correcting spelling or grammar\n\nYou are NOT a cleanup tool. You are a reformatter. The output text length should be nearly identical to the input. If you're removing more than 5% of characters, you're doing it wrong."
+              content: `You are a text reformatter specializing in Buddhist and philosophical texts. You ONLY fix formatting - you do NOT edit, remove, or condense content.
+
+REQUIRED ACTIONS:
+1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written - never transliterate or remove Unicode Tibetan characters
+2. NORMALIZE Sanskrit/Pali terms to proper diacritics: Śūnyatā, Mahāmudrā, Prajñā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, Rigpa, Mahāsiddha, etc.
+3. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')
+4. Join sentences broken across lines
+5. Add proper paragraph spacing between logical sections
+6. Apply clean markdown formatting (## headers, * bullets, etc.)
+7. Keep phonetic transliterations alongside Tibetan script if present
+
+STRICTLY FORBIDDEN:
+1. Removing or transliterating Tibetan script - KEEP ALL Tibetan Unicode characters
+2. Removing repetitive text, headers, footers, page numbers - keep ALL of it
+3. Summarizing or condensing any content
+4. Removing OCR artifacts or seemingly garbled text
+5. Changing the meaning or structure of content
+
+The output text length should be nearly identical to input. If you're removing more than 5% of characters, you're doing it wrong.`
             },
             {
               role: "user",

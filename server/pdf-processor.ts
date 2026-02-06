@@ -525,6 +525,7 @@ export class PDFProcessor {
           height: 2000
         });
 
+        let consecutiveFailures = 0;
         for (let pageNum = 1; pageNum <= maxTotalPages; pageNum++) {
           try {
             log(`Attempting pdf2pic conversion for page ${pageNum}`, 'pdf-processor');
@@ -534,17 +535,25 @@ export class PDFProcessor {
               const { data: { text } } = await this.ocrWorker.recognize(image.path);
               const cleanText = text.trim();
               
-              if (cleanText.length > 10) {
+              if (cleanText.length > 0) {
                 extractedTexts.push(cleanText);
                 successfulPages++;
-                log(`Successfully extracted text from page ${pageNum} using pdf2pic`, 'pdf-processor');
+                log(`Successfully extracted text from page ${pageNum} (${cleanText.length} chars) using pdf2pic`, 'pdf-processor');
+              } else {
+                extractedTexts.push(`[Page ${pageNum} - no extractable text]`);
+                log(`Page ${pageNum} had no extractable text, preserving placeholder`, 'pdf-processor');
               }
               
-              fs.unlinkSync(image.path);
+              try { fs.unlinkSync(image.path); } catch (e) {}
+              consecutiveFailures = 0;
             }
           } catch (pageError: any) {
+            consecutiveFailures++;
             log(`pdf2pic failed for page ${pageNum}: ${pageError.message}`, 'pdf-processor');
-            break; // Stop trying pdf2pic if it fails
+            if (consecutiveFailures >= 3) {
+              log(`3 consecutive page failures, assuming end of document at page ${pageNum}`, 'pdf-processor');
+              break;
+            }
           }
         }
       } catch (pdf2picError: any) {

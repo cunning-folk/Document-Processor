@@ -300,51 +300,57 @@ export class PDFProcessor {
         }
       }
       
-      // Step 2: Try text extraction on preprocessed PDF
+      // Step 2: Try text extraction on preprocessed PDF, then original if needed
       let needsOCR = false;
       let useMultiLanguageOCR = false;
       
-      try {
-        const textResult = await this.extractTextFromPDF(processingBuffer);
-        const extractedText = textResult.text.trim();
-        
-        // Check for encryption markers in extracted text
-        if (extractedText.includes('U2FsdGVkX1') || extractedText.includes('encrypted')) {
-          log(`Extracted text contains encryption markers for ${filename}`, 'pdf-processor');
-          throw new Error('This PDF contains encrypted content. Please save it as an unprotected PDF using your PDF viewer\'s "Print to PDF" option and try again.');
-        }
-        
-        // Check for gibberish from failed font decoding (common with Tibetan/Sanskrit PDFs)
-        if (extractedText.length >= 50 && isGibberishText(extractedText)) {
-          log(`Detected gibberish text from font decoding failure for ${filename}, will use OCR`, 'pdf-processor');
-          needsOCR = true;
-          useMultiLanguageOCR = true; // Use Tibetan + English OCR
-        }
-        
-        if (extractedText.length >= 50 && !needsOCR) {
-          log(`Text extraction successful for ${filename} using ${normalizationUsed ? 'preprocessed' : 'original'} PDF`, 'pdf-processor');
-          return {
-            text: textResult.text,
-            totalPages: textResult.totalPages,
-            method: normalizationUsed ? 'normalized-text-extraction' : 'text-extraction'
-          };
-        } else if (!needsOCR) {
-          log(`Text extraction yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
-          needsOCR = true;
-        }
-      } catch (textError: any) {
-        log(`Text extraction failed for ${filename}: ${textError.message}`, 'pdf-processor');
-        needsOCR = true;
-        
-        // Check for specific error types and provide helpful messages
-        const errorMessage = textError.message.toLowerCase();
-        if (errorMessage.includes('invalid pdf structure')) {
-          throw new Error('This PDF has structural issues that prevent processing. Try using "Print to PDF" from your PDF viewer to create a clean version.');
-        }
-        if (errorMessage.includes('encrypted') || errorMessage.includes('password') || errorMessage.includes('protected')) {
-          throw new Error('This PDF is password-protected. Please remove the password or use "Print to PDF" to create an unprotected version.');
+      // Try extraction on both normalized and original buffers
+      const buffersToTry = normalizationUsed 
+        ? [{ buf: processingBuffer, label: 'preprocessed' }, { buf: buffer, label: 'original' }]
+        : [{ buf: buffer, label: 'original' }];
+      
+      for (const { buf, label } of buffersToTry) {
+        try {
+          log(`Attempting text extraction on ${label} PDF for ${filename}`, 'pdf-processor');
+          const textResult = await this.extractTextFromPDF(buf);
+          const extractedText = textResult.text.trim();
+          
+          if (extractedText.includes('U2FsdGVkX1') || extractedText.includes('encrypted')) {
+            log(`Extracted text contains encryption markers for ${filename}`, 'pdf-processor');
+            throw new Error('This PDF contains encrypted content. Please save it as an unprotected PDF using your PDF viewer\'s "Print to PDF" option and try again.');
+          }
+          
+          if (extractedText.length >= 50 && isGibberishText(extractedText)) {
+            log(`Detected gibberish text from font decoding failure on ${label} for ${filename}, will use OCR`, 'pdf-processor');
+            needsOCR = true;
+            useMultiLanguageOCR = true;
+            continue;
+          }
+          
+          if (extractedText.length >= 50) {
+            log(`Text extraction successful for ${filename} using ${label} PDF (${extractedText.length} chars)`, 'pdf-processor');
+            return {
+              text: textResult.text,
+              totalPages: textResult.totalPages,
+              method: label === 'preprocessed' ? 'normalized-text-extraction' : 'text-extraction'
+            };
+          } else {
+            log(`Text extraction on ${label} yielded minimal content (${extractedText.length} chars) for ${filename}`, 'pdf-processor');
+          }
+        } catch (textError: any) {
+          log(`Text extraction failed on ${label} for ${filename}: ${textError.message}`, 'pdf-processor');
+          
+          const errorMessage = textError.message.toLowerCase();
+          if (errorMessage.includes('invalid pdf structure')) {
+            throw new Error('This PDF has structural issues that prevent processing. Try using "Print to PDF" from your PDF viewer to create a clean version.');
+          }
+          if (errorMessage.includes('encrypted') || errorMessage.includes('password') || errorMessage.includes('protected')) {
+            throw new Error('This PDF is password-protected. Please remove the password or use "Print to PDF" to create an unprotected version.');
+          }
         }
       }
+      
+      needsOCR = true;
 
       // Step 3: Only try OCR if we don't have encryption markers (OCR will fail on encrypted content)
       if (hasEncryptionMarkers) {

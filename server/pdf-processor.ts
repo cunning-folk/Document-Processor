@@ -506,7 +506,7 @@ export class PDFProcessor {
       // Try multiple conversion approaches
       const extractedTexts: string[] = [];
       let successfulPages = 0;
-      const maxTotalPages = 50;
+      const maxTotalPages = 100;
 
       // Method 1: Try pdf2pic with different settings
       try {

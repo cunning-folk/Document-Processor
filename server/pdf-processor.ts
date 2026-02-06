@@ -385,76 +385,113 @@ export class PDFProcessor {
   }
 
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; totalPages: number }> {
-    // Use Ghostscript-based text extraction since pdftotext isn't available
     const execAsync = promisify(exec);
-    const timeout = 60000; // 60 second timeout for Ghostscript operations
+    const timeout = 120000; // 120 second timeout for extraction operations
     
     const tempPdfPath = `/tmp/extract_${Date.now()}.pdf`;
     const tempTextPath = `/tmp/extract_${Date.now()}.txt`;
     
-    // Helper to clean up temp files
     const cleanup = () => {
       try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
       try { if (fs.existsSync(tempTextPath)) fs.unlinkSync(tempTextPath); } catch (e) {}
     };
     
+    let ghostscriptText = '';
+    let pdfParseText = '';
+    let pageCount = 1;
+    
+    fs.writeFileSync(tempPdfPath, buffer);
+    
+    // Get page count first
     try {
-      fs.writeFileSync(tempPdfPath, buffer);
-      
-      // Extract text using Ghostscript with timeout
-      try {
-        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}"`, {
-          timeout,
-          killSignal: 'SIGKILL'
-        });
-      } catch (gsError: any) {
-        if (gsError.killed) {
-          log(`Ghostscript text extraction timed out after ${timeout}ms`, 'pdf-processor');
-          throw new Error('Text extraction timed out - PDF may be too complex');
-        }
-        log(`Ghostscript error: ${gsError.stderr || gsError.message}`, 'pdf-processor');
-        throw gsError;
+      const pageCountResult = await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dNODISPLAY -c "(\`${tempPdfPath}\`) (r) file runpdfbegin pdfpagecount = quit"`, {
+        timeout: 15000,
+        killSignal: 'SIGKILL'
+      });
+      const count = parseInt(pageCountResult.stdout.trim(), 10);
+      if (!isNaN(count) && count > 0) {
+        pageCount = count;
       }
+    } catch (countError: any) {
+      log(`Page count via GS failed: ${countError.message}`, 'pdf-processor');
+      try {
+        const pdfParse = await import('pdf-parse');
+        const pdfData = await pdfParse.default(buffer);
+        pageCount = pdfData.numpages || 1;
+      } catch (e) {
+        const stats = fs.statSync(tempPdfPath);
+        pageCount = Math.max(1, Math.floor(stats.size / 50000));
+      }
+    }
+    
+    log(`PDF has ${pageCount} pages, starting dual extraction`, 'pdf-processor');
+    
+    // Method 1: Ghostscript txtwrite extraction
+    try {
+      await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=txtwrite -sOutputFile="${tempTextPath}" "${tempPdfPath}"`, {
+        timeout,
+        killSignal: 'SIGKILL'
+      });
       
       if (fs.existsSync(tempTextPath)) {
-        const extractedText = fs.readFileSync(tempTextPath, 'utf8');
-        
-        // Get page count using Ghostscript with timeout
-        let pageCount = 1;
-        try {
-          const pageCountResult = await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -dNODISPLAY -c "(\`${tempPdfPath}\`) (r) file runpdfbegin pdfpagecount = quit"`, {
-            timeout: 10000, // 10 second timeout for page count
-            killSignal: 'SIGKILL'
-          });
-          const count = parseInt(pageCountResult.stdout.trim(), 10);
-          if (!isNaN(count) && count > 0) {
-            pageCount = count;
-          }
-        } catch (countError: any) {
-          // Fallback: estimate from file size
-          log(`Page count failed, estimating from file size: ${countError.message}`, 'pdf-processor');
-          const stats = fs.statSync(tempPdfPath);
-          pageCount = Math.max(1, Math.floor(stats.size / 50000)); // Rough estimate
-        }
-        
-        // Cleanup
-        cleanup();
-        
-        if (extractedText.trim().length < 10) {
-          throw new Error('Text extraction yielded minimal content');
-        }
-        
-        return {
-          text: extractedText,
-          totalPages: pageCount
-        };
-      } else {
-        throw new Error('Text extraction failed - no output file generated');
+        ghostscriptText = fs.readFileSync(tempTextPath, 'utf8');
+        log(`Ghostscript extracted ${ghostscriptText.length} chars from ${pageCount} pages`, 'pdf-processor');
+        try { fs.unlinkSync(tempTextPath); } catch (e) {}
       }
-    } catch (error: any) {
-      cleanup(); // Always cleanup on error
-      throw new Error(`PDF text extraction failed: ${error.message}`);
+    } catch (gsError: any) {
+      log(`Ghostscript extraction failed: ${gsError.killed ? 'timeout' : gsError.message}`, 'pdf-processor');
     }
+    
+    // Method 2: pdf-parse extraction (often better for complex PDFs)
+    try {
+      const pdfParse = await import('pdf-parse');
+      const pdfData = await pdfParse.default(buffer);
+      pdfParseText = pdfData.text || '';
+      if (pdfData.numpages && pdfData.numpages > pageCount) {
+        pageCount = pdfData.numpages;
+      }
+      log(`pdf-parse extracted ${pdfParseText.length} chars from ${pdfData.numpages} pages`, 'pdf-processor');
+    } catch (parseError: any) {
+      log(`pdf-parse extraction failed: ${parseError.message}`, 'pdf-processor');
+    }
+    
+    cleanup();
+    
+    // Choose the extraction with more content
+    const gsClean = ghostscriptText.trim();
+    const ppClean = pdfParseText.trim();
+    
+    if (gsClean.length === 0 && ppClean.length === 0) {
+      throw new Error('Text extraction yielded no content from either method');
+    }
+    
+    let chosenText: string;
+    let chosenMethod: string;
+    
+    if (gsClean.length >= ppClean.length) {
+      chosenText = ghostscriptText;
+      chosenMethod = 'Ghostscript';
+    } else {
+      chosenText = pdfParseText;
+      chosenMethod = 'pdf-parse';
+    }
+    
+    const charsPerPage = chosenText.length / pageCount;
+    log(`Chose ${chosenMethod} (${chosenText.length} chars, ~${Math.round(charsPerPage)} chars/page for ${pageCount} pages)`, 'pdf-processor');
+    
+    // Warn if extraction seems suspiciously low per page
+    if (pageCount > 3 && charsPerPage < 200) {
+      log(`WARNING: Very low character count per page (${Math.round(charsPerPage)}), extraction may be incomplete`, 'pdf-processor');
+    }
+    
+    if (chosenText.trim().length < 10) {
+      throw new Error('Text extraction yielded minimal content');
+    }
+    
+    return {
+      text: chosenText,
+      totalPages: pageCount
+    };
   }
 
   private async extractTextWithOCR(buffer: Buffer, filename: string, languages: string[] = ['eng']): Promise<{ text: string; totalPages: number }> {
@@ -469,7 +506,7 @@ export class PDFProcessor {
       // Try multiple conversion approaches
       const extractedTexts: string[] = [];
       let successfulPages = 0;
-      const maxTotalPages = 20;
+      const maxTotalPages = 50;
 
       // Method 1: Try pdf2pic with different settings
       try {

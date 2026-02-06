@@ -147,10 +147,23 @@ The output text length should be nearly identical to input. If you're removing m
             }
           ],
           temperature: 0,
-          max_tokens: 16000
+          max_tokens: 32000
         });
 
         processedContent = response.choices[0].message.content || chunk.content;
+        
+        // Check if response was truncated
+        const finishReason = response.choices[0].finish_reason;
+        if (finishReason === 'length') {
+          log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (finish_reason: length), marking for retry`, "background-processor");
+          if (retryCount < 2) {
+            await storage.updateDocumentChunk(chunk.id, {
+              status: 'pending',
+              errorMessage: `LOW_RETENTION_RETRY_${retryCount + 1}: truncated response`
+            });
+            return;
+          }
+        }
         
         // Validate content retention
         const originalLength = chunk.content.length;

@@ -612,10 +612,9 @@ export class PDFProcessor {
           -sOutputFile="${tempOutputPath}" \\
           "${tempInputPath}" 2>/dev/null`;
         
-        await execAsync(gsCommand);
+        await execAsync(gsCommand, { timeout: 60000, killSignal: 'SIGKILL' });
         
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
-          // Second pass: Further cleanup and optimization
           const cleanCommand = `gs -dNOPAUSE -dBATCH -dSAFER \\
             -sDEVICE=pdfwrite \\
             -dCompatibilityLevel=1.4 \\
@@ -626,7 +625,7 @@ export class PDFProcessor {
             -sOutputFile="${tempCleanPath}" \\
             "${tempOutputPath}" 2>/dev/null`;
           
-          await execAsync(cleanCommand);
+          await execAsync(cleanCommand, { timeout: 60000, killSignal: 'SIGKILL' });
           
           if (fs.existsSync(tempCleanPath) && fs.statSync(tempCleanPath).size > 0) {
             const normalizedBuffer = fs.readFileSync(tempCleanPath);
@@ -642,7 +641,7 @@ export class PDFProcessor {
       // Method 2: Simple Ghostscript flattening (fallback)
       try {
         log(`Attempting simple PDF flattening for ${filename}`, 'pdf-processor');
-        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -sOutputFile="${tempOutputPath}" "${tempInputPath}" 2>/dev/null`);
+        await execAsync(`gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -sOutputFile="${tempOutputPath}" "${tempInputPath}" 2>/dev/null`, { timeout: 60000, killSignal: 'SIGKILL' });
         
         if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
           const normalizedBuffer = fs.readFileSync(tempOutputPath);

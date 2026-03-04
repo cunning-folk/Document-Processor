@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { storage } from './storage';
 import { log } from './vite';
 
@@ -139,22 +140,7 @@ ${chunk.content}`;
       const isRetry = chunk.errorMessage?.includes('LOW_RETENTION_RETRY');
       const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
       
-      const maxRetries = 3;
-      let lastError: any = null;
-      
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          if (attempt > 0) {
-            const backoffMs = attempt * 10000;
-            log(`Rate limit retry ${attempt}/${maxRetries} for chunk ${chunk.chunkIndex + 1}, waiting ${backoffMs}ms`, "background-processor");
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            this.lastApiCallTime = Date.now();
-          }
-          
-          const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 16384,
-            system: `You are a text reformatter specializing in Buddhist and philosophical texts. Your job is to clean and format raw extracted text into a properly punctuated, typeset transcript with beautiful markdown formatting.
+      const systemPrompt = `You are a text reformatter specializing in Buddhist and philosophical texts. Your job is to clean and format raw extracted text into a properly punctuated, typeset transcript with beautiful markdown formatting.
 
 REQUIRED ACTIONS:
 1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written — never transliterate or remove Unicode Tibetan characters
@@ -175,7 +161,25 @@ STRICTLY FORBIDDEN:
 5. Changing the meaning or structure of content
 6. Adding commentary or explanations
 
-Output ONLY the reformatted text. Do not include any preamble like "Here is the reformatted text:" — just output the formatted content directly.`,
+Output ONLY the reformatted text. Do not include any preamble like "Here is the reformatted text:" — just output the formatted content directly.`;
+
+      const maxRetries = 3;
+      let lastError: any = null;
+      let contentBlocked = false;
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            const backoffMs = attempt * 10000;
+            log(`Rate limit retry ${attempt}/${maxRetries} for chunk ${chunk.chunkIndex + 1}, waiting ${backoffMs}ms`, "background-processor");
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            this.lastApiCallTime = Date.now();
+          }
+          
+          const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 16384,
+            system: systemPrompt,
             messages: [
               {
                 role: "user",
@@ -199,32 +203,19 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
             }
           }
           
-          const originalLength = chunk.content.length;
-          const processedLength = processedContent.length;
-          const overlapAllowance = chunk.chunkIndex > 0 ? 500 : 0;
-          const effectiveOriginalLength = originalLength - overlapAllowance;
-          const retentionRate = effectiveOriginalLength > 0 ? processedLength / effectiveOriginalLength : 1;
-          
-          log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)`, "background-processor");
-          
-          if (retentionRate < 0.70 && retryCount < 2) {
-            const newRetryCount = retryCount + 1;
-            log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
-            
-            await storage.updateDocumentChunk(chunk.id, {
-              status: 'pending',
-              errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
-            });
-            return;
-          }
-          
-          log(`Completed chunk ${chunk.chunkIndex + 1} for document ${document.id}`, "background-processor");
           lastError = null;
+          contentBlocked = false;
           break;
 
         } catch (apiError: any) {
           lastError = apiError;
-          if (apiError.status === 429 || apiError.message?.includes('rate limit') || apiError.message?.includes('overloaded')) {
+          const errorMsg = apiError.message || JSON.stringify(apiError);
+          if (errorMsg.includes('content filtering') || errorMsg.includes('blocked by content')) {
+            contentBlocked = true;
+            log(`Chunk ${chunk.chunkIndex + 1} blocked by Claude content filter, falling back to OpenAI`, "background-processor");
+            break;
+          }
+          if (apiError.status === 429 || errorMsg.includes('rate limit') || errorMsg.includes('overloaded')) {
             if (attempt < maxRetries) {
               continue;
             }
@@ -232,10 +223,67 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
           throw apiError;
         }
       }
+
+      if (contentBlocked) {
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) {
+          throw new Error('Claude content filter blocked this chunk and no OpenAI API key is available for fallback');
+        }
+        const openai = new OpenAI({ apiKey: openaiKey });
+        
+        log(`Processing chunk ${chunk.chunkIndex + 1} with OpenAI GPT-4o fallback`, "background-processor");
+        
+        const openaiResponse = await openai.chat.completions.create({
+          model: "gpt-4o",
+          max_tokens: 16384,
+          temperature: 0,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: chunkPrompt }
+          ]
+        });
+        
+        processedContent = openaiResponse.choices[0]?.message?.content || chunk.content;
+        
+        if (openaiResponse.choices[0]?.finish_reason === 'length') {
+          log(`Chunk ${chunk.chunkIndex + 1} OpenAI response was TRUNCATED, marking for retry`, "background-processor");
+          if (retryCount < 2) {
+            await storage.updateDocumentChunk(chunk.id, {
+              status: 'pending',
+              errorMessage: `LOW_RETENTION_RETRY_${retryCount + 1}: truncated OpenAI response`
+            });
+            return;
+          }
+        }
+        
+        log(`Chunk ${chunk.chunkIndex + 1} processed successfully via OpenAI fallback`, "background-processor");
+      }
       
-      if (lastError) {
+      if (lastError && !contentBlocked) {
         throw lastError;
       }
+
+      const originalLength = chunk.content.length;
+      const processedLength = processedContent!.length;
+      const overlapAllowance = chunk.chunkIndex > 0 ? 500 : 0;
+      const effectiveOriginalLength = originalLength - overlapAllowance;
+      const retentionRate = effectiveOriginalLength > 0 ? processedLength / effectiveOriginalLength : 1;
+      
+      log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)`, "background-processor");
+      
+      if (retentionRate < 0.70 && retryCount < 2) {
+        const newRetryCount = retryCount + 1;
+        log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
+        
+        await storage.updateDocumentChunk(chunk.id, {
+          status: 'pending',
+          errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
+        });
+        return;
+      }
+      
+      log(`Completed chunk ${chunk.chunkIndex + 1} for document ${document.id}`, "background-processor");
+
 
       await storage.updateDocumentChunk(chunk.id, {
         processedContent: processedContent!,
@@ -356,34 +404,59 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
   }
 
   private async generateFilename(markdown: string): Promise<string | null> {
+    const snippet = markdown.slice(0, 3000);
+    const filenameSystemPrompt = "You generate short, descriptive filenames for documents. Output ONLY the filename with no extension, no quotes, no explanation. Use title case with hyphens between words. Keep it under 60 characters. Examples: 'Mahamudra-Ocean-of-Definitive-Meaning', 'Heart-Sutra-Commentary', 'Tsalung-Practice-Instructions'";
+    const filenameUserPrompt = `Generate a descriptive filename for this document based on its content:\n\n${snippet}`;
+    
+    const sanitizeFilename = (raw: string) => {
+      let filename = raw.trim();
+      filename = filename.replace(/[^a-zA-Z0-9\-_āīūśṣṭḍṅñṃḥĀĪŪŚṢṬḌṄÑṂḤ]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      if (filename.length > 60) filename = filename.substring(0, 60).replace(/-$/, '');
+      return filename;
+    };
+
     try {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const snippet = markdown.slice(0, 3000);
-      
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 100,
-        system: "You generate short, descriptive filenames for documents. Output ONLY the filename with no extension, no quotes, no explanation. Use title case with hyphens between words. Keep it under 60 characters. Examples: 'Mahamudra-Ocean-of-Definitive-Meaning', 'Heart-Sutra-Commentary', 'Tsalung-Practice-Instructions'",
-        messages: [
-          {
-            role: "user",
-            content: `Generate a descriptive filename for this document based on its content:\n\n${snippet}`
-          }
-        ]
+        system: filenameSystemPrompt,
+        messages: [{ role: "user", content: filenameUserPrompt }]
       });
       
       const textBlock = response.content.find((block: any) => block.type === 'text');
       if (textBlock) {
-        let filename = (textBlock as any).text.trim();
-        filename = filename.replace(/[^a-zA-Z0-9\-_āīūśṣṭḍṅñṃḥĀĪŪŚṢṬḌṄÑṂḤ]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        if (filename.length > 60) filename = filename.substring(0, 60).replace(/-$/, '');
-        log(`Generated filename: ${filename}`, "background-processor");
+        const filename = sanitizeFilename((textBlock as any).text);
+        log(`Generated filename via Claude: ${filename}`, "background-processor");
         return filename;
       }
       return null;
-    } catch (error: any) {
-      log(`Failed to generate filename: ${error.message}`, "background-processor");
-      return null;
+    } catch (claudeError: any) {
+      log(`Claude filename generation failed: ${claudeError.message}, trying OpenAI fallback`, "background-processor");
+      try {
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) return null;
+        const openai = new OpenAI({ apiKey: openaiKey });
+        const openaiResponse = await openai.chat.completions.create({
+          model: "gpt-4o",
+          max_tokens: 100,
+          temperature: 0,
+          messages: [
+            { role: "system", content: filenameSystemPrompt },
+            { role: "user", content: filenameUserPrompt }
+          ]
+        });
+        const content = openaiResponse.choices[0]?.message?.content;
+        if (content) {
+          const filename = sanitizeFilename(content);
+          log(`Generated filename via OpenAI fallback: ${filename}`, "background-processor");
+          return filename;
+        }
+        return null;
+      } catch (openaiError: any) {
+        log(`OpenAI filename fallback also failed: ${openaiError.message}`, "background-processor");
+        return null;
+      }
     }
   }
 }

@@ -225,12 +225,18 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
         
         log(`Processing chunk ${chunk.chunkIndex + 1} with OpenAI GPT-4o fallback`, "background-processor");
         
+        const openaiSystemPrompt = systemPrompt + `\n\nADDITIONAL STRICT RULES FOR THIS REQUEST:
+- Output ONLY text that exists in the source material. Do NOT invent, fabricate, or hallucinate any new sentences, paragraphs, or content.
+- If a word or phrase is unclear, keep it as-is rather than guessing or expanding it.
+- Your output should be approximately the same length as the input — never significantly longer.
+- Do NOT add explanatory text, introductions, conclusions, or transitional sentences that are not in the original.`;
+        
         const openaiResponse = await openai.chat.completions.create({
           model: "gpt-4o",
           max_tokens: 16384,
           temperature: 0,
           messages: [
-            { role: "system", content: systemPrompt },
+            { role: "system", content: openaiSystemPrompt },
             { role: "user", content: chunkPrompt }
           ]
         });
@@ -261,8 +267,18 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
       const effectiveOriginalLength = originalLength - overlapAllowance;
       const retentionRate = effectiveOriginalLength > 0 ? processedLength / effectiveOriginalLength : 1;
       
-      log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)`, "background-processor");
+      log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)${contentBlocked ? ' [OpenAI fallback]' : ''}`, "background-processor");
       
+      if (retentionRate > 1.40 && retryCount < 2) {
+        const newRetryCount = retryCount + 1;
+        log(`Chunk ${chunk.chunkIndex + 1} output is ${(retentionRate * 100).toFixed(1)}% of input — possible hallucination, marking for retry ${newRetryCount}`, "background-processor");
+        await storage.updateDocumentChunk(chunk.id, {
+          status: 'pending',
+          errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% expansion detected`
+        });
+        return;
+      }
+
       if (retentionRate < 0.70 && retryCount < 2) {
         const newRetryCount = retryCount + 1;
         log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");

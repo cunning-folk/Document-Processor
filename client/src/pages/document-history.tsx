@@ -19,6 +19,7 @@ interface Document {
   processedChunks: number | null;
   createdAt: string;
   processedMarkdown: string | null;
+  suggestedFilename: string | null;
   errorMessage: string | null;
   isEncrypted: boolean;
   expiresAt: string;
@@ -94,16 +95,13 @@ export default function DocumentHistory() {
     },
   });
 
-  const handleDownload = (documentId: number, filename: string) => {
+  const handleDownload = (documentId: number, filename: string, suggestedFilename?: string | null) => {
     try {
-      // Use direct browser navigation for download
-      const originalName = filename.replace(/\.[^/.]+$/, "");
       const downloadUrl = `/api/documents/${documentId}/download`;
       
-      // Create a temporary link and trigger download
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `${originalName}_processed.md`;
+      a.download = suggestedFilename ? `${suggestedFilename}.md` : `${filename.replace(/\.[^/.]+$/, "")}_processed.md`;
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
@@ -306,7 +304,7 @@ export default function DocumentHistory() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleDownload(doc.id, doc.filename)}
+                            onClick={() => handleDownload(doc.id, doc.filename, doc.suggestedFilename)}
                             className="flex-1 sm:flex-none transition-all duration-200 hover:scale-105 hover:shadow-md bg-green-50 hover:bg-green-100 animate-in slide-in-from-bottom-2 duration-300 delay-500"
                           >
                             <Download className="h-4 w-4 mr-2 transition-transform duration-200 hover:translate-y-0.5" />

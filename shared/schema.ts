@@ -19,6 +19,7 @@ export const documents = pgTable("documents", {
   filename: text("filename").notNull(),
   originalText: text("original_text").notNull(),
   processedMarkdown: text("processed_markdown"),
+  suggestedFilename: text("suggested_filename"),
   status: text("status").notNull().default("pending"), // pending, processing, completed, failed
   totalChunks: integer("total_chunks").default(1),
   processedChunks: integer("processed_chunks").default(0),

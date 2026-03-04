@@ -503,9 +503,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Document processing not completed or no processed content available" });
       }
       
-      // Create filename for download
-      const originalName = document.filename.replace(/\.[^/.]+$/, ""); // Remove extension
-      const downloadFilename = `${originalName}_processed.md`;
+      const downloadFilename = document.suggestedFilename 
+        ? `${document.suggestedFilename}.md`
+        : `${document.filename.replace(/\.[^/.]+$/, "")}_processed.md`;
       
       res.setHeader('Content-Type', 'text/markdown');
       res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);

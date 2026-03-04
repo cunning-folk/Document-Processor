@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Field Processor is a web application that processes documents (PDF, TXT, Markdown) using OpenAI's Assistant API to convert them into clean, formatted markdown. The system features client-side encryption for privacy, background processing with chunked document handling, and automatic cleanup after 24 hours. Built as a full-stack TypeScript application with React frontend and Express backend.
+The Field Processor is a web application that processes documents (PDF, TXT, Markdown) using Claude (Anthropic API) to convert them into clean, properly punctuated, typeset transcripts with markdown formatting. The system features background processing with chunked document handling, smart filename generation based on content, and automatic cleanup after 24 hours. Built as a full-stack TypeScript application with React frontend and Express backend.
 
 ## User Preferences
 
@@ -42,11 +42,12 @@ Preferred communication style: Simple, everyday language.
 - **Multi-format support**: PDF, TXT, and Markdown files
 - **PDF processing** with text extraction, normalization, and OCR fallback using PyPDF2
 - **Document chunking** with 500-character context overlap between chunks for continuity
-- **Parallel chunk processing** - up to 3 chunks processed concurrently (MAX_CONCURRENT_CHUNKS)
+- **Sequential chunk processing** with rate limit management (configurable MAX_CONCURRENT_CHUNKS)
 - **Partial success handling** - if some chunks fail, completed sections are still delivered with placeholders for failed sections
+- **Smart filename generation** - Claude generates descriptive filenames based on document content
 - **Background processing** with status tracking and progress updates
 - **Client-side encryption** using CryptoJS before upload for privacy
-- **Retry mechanism** for failed processing attempts
+- **Retry mechanism** with exponential backoff for rate limits and transient errors
 
 ### Privacy and Security Features
 - **Client-side encryption** of document content before server upload
@@ -65,7 +66,7 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### Third-party Services
-- **OpenAI Assistant API** - Document processing and markdown formatting
+- **Anthropic Claude API** (claude-sonnet-4-20250514) - Document formatting and smart filename generation
 - **Neon Database** - Managed PostgreSQL hosting
 - **Replit Authentication** - OAuth provider for user authentication
 

@@ -1,9 +1,9 @@
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { storage } from './storage';
 import { log } from './vite';
 
 const MAX_CONCURRENT_CHUNKS = 1;
-const RATE_LIMIT_DELAY_MS = 10000;
+const RATE_LIMIT_DELAY_MS = 2000;
 
 export class BackgroundProcessor {
   private isProcessing = false;
@@ -15,7 +15,7 @@ export class BackgroundProcessor {
   start() {
     if (this.processingInterval) return;
     
-    log("Starting background processor", "background-processor");
+    log("Starting background processor (Claude API)", "background-processor");
     this.processingInterval = setInterval(() => {
       this.processNextChunks();
     }, 3000);
@@ -33,7 +33,6 @@ export class BackgroundProcessor {
     const elapsed = Date.now() - this.lastApiCallTime;
     if (elapsed < RATE_LIMIT_DELAY_MS) {
       const waitTime = RATE_LIMIT_DELAY_MS - elapsed;
-      log(`Rate limit spacing: waiting ${waitTime}ms before next API call`, "background-processor");
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
     this.lastApiCallTime = Date.now();
@@ -107,27 +106,29 @@ export class BackgroundProcessor {
         log(`Chunk ${chunk.chunkIndex + 1} is too large (${chunk.content.length} chars), marking as failed`, "background-processor");
         await storage.updateDocumentChunk(chunk.id, {
           status: 'failed',
-          processedContent: `Error: Chunk too large (${chunk.content.length} characters). Please use a smaller document or contact support.`
+          processedContent: `Error: Chunk too large (${chunk.content.length} characters).`
         });
         return;
       }
       
       await this.waitForRateLimit();
       
-      const openai = new OpenAI({ apiKey: document.apiKey });
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       
       const isMultipart = totalChunks > 1;
       const partInfo = isMultipart ? `This is part ${chunk.chunkIndex + 1} of ${totalChunks}. The beginning of this chunk may overlap with the end of the previous chunk for context continuity — do NOT duplicate that overlapping content in your output.\n\n` : '';
-      const chunkPrompt = `${partInfo}Reformat this text with proper markdown formatting. Preserve ALL content exactly.
+      const chunkPrompt = `${partInfo}Clean and format the following text into a properly punctuated, typeset transcript with paragraph spacing. Preserve ALL content exactly — do not remove, summarize, or condense anything.
 
 CRITICAL REQUIREMENTS:
 1. PRESERVE all Tibetan script (ཆོས་ཉིད་, བདེན་མེད་, etc.) exactly as written - do NOT transliterate or remove
-2. NORMALIZE Sanskrit/Pali diacritics to proper Unicode: Śūnyatā, Mahāsiddha, Rigpa, Prajñāpāramitā, Dharmakāya, etc.
-3. Add proper paragraph spacing between logical sections
-4. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
-5. Apply clean markdown formatting (## headers, proper spacing)
-6. Keep phonetic transliterations alongside Tibetan script if present
-7. If content at the start overlaps with a previous chunk, skip the duplicate portion and begin from new content
+2. NORMALIZE Sanskrit/Pali diacritics to proper Unicode: Śūnyatā, Mahāmudrā, Mahāsiddha, Rigpa, Prajñāpāramitā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, etc.
+3. Fix punctuation: proper periods, commas, quotation marks, em-dashes
+4. Add proper paragraph spacing between logical sections
+5. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
+6. Join sentences broken across lines into proper flowing paragraphs
+7. Apply clean markdown formatting (## headers, proper spacing)
+8. Keep phonetic transliterations alongside Tibetan script if present
+9. If content at the start overlaps with a previous chunk, skip the duplicate portion and begin from new content
 
 Text to reformat:
 
@@ -144,52 +145,51 @@ ${chunk.content}`;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           if (attempt > 0) {
-            const backoffMs = attempt * 15000;
+            const backoffMs = attempt * 10000;
             log(`Rate limit retry ${attempt}/${maxRetries} for chunk ${chunk.chunkIndex + 1}, waiting ${backoffMs}ms`, "background-processor");
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             this.lastApiCallTime = Date.now();
           }
           
-          const response = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-              {
-                role: "system",
-                content: `You are a text reformatter specializing in Buddhist and philosophical texts. You ONLY fix formatting - you do NOT edit, remove, or condense content.
+          const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 16384,
+            system: `You are a text reformatter specializing in Buddhist and philosophical texts. Your job is to clean and format raw extracted text into a properly punctuated, typeset transcript with beautiful markdown formatting.
 
 REQUIRED ACTIONS:
-1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written - never transliterate or remove Unicode Tibetan characters
-2. NORMALIZE Sanskrit/Pali terms to proper diacritics: Śūnyatā, Mahāmudrā, Prajñā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, Rigpa, Mahāsiddha, etc.
-3. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
-4. Join sentences broken across lines
-5. Add proper paragraph spacing between logical sections
-6. Apply clean markdown formatting (## headers, * bullets, etc.)
-7. Keep phonetic transliterations alongside Tibetan script if present
-8. If this is a multi-part document and the beginning overlaps with a previous chunk, omit the duplicate text and start from where the new content begins
+1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written — never transliterate or remove Unicode Tibetan characters
+2. NORMALIZE Sanskrit/Pali terms to proper diacritics: Śūnyatā, Mahāmudrā, Prajñā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, Rigpa, Mahāsiddha, Prajñāpāramitā, etc.
+3. Fix punctuation throughout: proper periods, commas, semicolons, quotation marks, em-dashes
+4. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')
+5. Join sentences broken across lines into proper flowing paragraphs
+6. Add proper paragraph spacing between logical sections
+7. Apply clean markdown formatting (## headers, * bullets, > blockquotes for quoted teachings)
+8. Keep phonetic transliterations alongside Tibetan script if present
+9. If this is a multi-part document and the beginning overlaps with a previous chunk, omit the duplicate text and start from where the new content begins
 
 STRICTLY FORBIDDEN:
-1. Removing or transliterating Tibetan script - KEEP ALL Tibetan Unicode characters
-2. Removing repetitive text, headers, footers, page numbers - keep ALL of it
+1. Removing or transliterating Tibetan script — KEEP ALL Tibetan Unicode characters
+2. Removing any text including repetitive text, headers, footers, page numbers — keep ALL of it
 3. Summarizing or condensing any content
-4. Removing OCR artifacts or seemingly garbled text
+4. Removing OCR artifacts or seemingly garbled text — keep it
 5. Changing the meaning or structure of content
+6. Adding commentary or explanations
 
-The output text length should be close to input length (accounting for overlap removal and formatting changes).`
-              },
+Output ONLY the reformatted text. Do not include any preamble like "Here is the reformatted text:" — just output the formatted content directly.`,
+            messages: [
               {
                 role: "user",
                 content: chunkPrompt
               }
-            ],
-            temperature: 0,
-            max_tokens: 16384
+            ]
           });
 
-          processedContent = response.choices[0].message.content || chunk.content;
+          const textBlock = response.content.find((block: any) => block.type === 'text');
+          processedContent = textBlock ? (textBlock as any).text : chunk.content;
           
-          const finishReason = response.choices[0].finish_reason;
-          if (finishReason === 'length') {
-            log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (finish_reason: length), marking for retry`, "background-processor");
+          const stopReason = response.stop_reason;
+          if (stopReason === 'max_tokens') {
+            log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (stop_reason: max_tokens), marking for retry`, "background-processor");
             if (retryCount < 2) {
               await storage.updateDocumentChunk(chunk.id, {
                 status: 'pending',
@@ -207,7 +207,7 @@ The output text length should be close to input length (accounting for overlap r
           
           log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)`, "background-processor");
           
-          if (retentionRate < 0.85 && retryCount < 2) {
+          if (retentionRate < 0.70 && retryCount < 2) {
             const newRetryCount = retryCount + 1;
             log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
             
@@ -224,7 +224,7 @@ The output text length should be close to input length (accounting for overlap r
 
         } catch (apiError: any) {
           lastError = apiError;
-          if (apiError.message?.includes('429') || apiError.message?.includes('rate limit')) {
+          if (apiError.status === 429 || apiError.message?.includes('rate limit') || apiError.message?.includes('overloaded')) {
             if (attempt < maxRetries) {
               continue;
             }
@@ -250,12 +250,14 @@ The output text length should be close to input length (accounting for overlap r
     } catch (error: any) {
       log(`Error processing chunk ${chunk.chunkIndex + 1}: ${error.message}`, "background-processor");
       
-      const isRetryable = error.message.includes('rate limit') || 
-                         error.message.includes('timeout') || 
-                         error.message.includes('network') ||
-                         error.message.includes('503') ||
-                         error.message.includes('502') ||
-                         error.message.includes('429');
+      const isRetryable = error.message?.includes('rate limit') || 
+                         error.message?.includes('timeout') || 
+                         error.message?.includes('network') ||
+                         error.message?.includes('overloaded') ||
+                         error.status === 429 ||
+                         error.status === 529 ||
+                         error.status === 503 ||
+                         error.status === 502;
       
       if (isRetryable) {
         await storage.updateDocumentChunk(chunk.id, {
@@ -302,12 +304,15 @@ The output text length should be close to input length (accounting for overlap r
         .map(chunk => chunk.processedContent)
         .join('\n\n');
       
+      const suggestedFilename = await this.generateFilename(processedMarkdown);
+      
       await storage.updateDocument(documentId, {
         processedMarkdown,
+        suggestedFilename,
         status: 'completed'
       });
       
-      log(`Document ${documentId} processing completed (all ${chunks.length} chunks successful)`, "background-processor");
+      log(`Document ${documentId} processing completed (all ${chunks.length} chunks successful)${suggestedFilename ? `, suggested filename: ${suggestedFilename}` : ''}`, "background-processor");
     } catch (error: any) {
       log(`Error finalizing document ${documentId}: ${error.message}`, "background-processor");
       await storage.updateDocument(documentId, {
@@ -331,9 +336,11 @@ The output text length should be close to input length (accounting for overlap r
       });
       
       const processedMarkdown = processedParts.join('\n\n');
+      const suggestedFilename = await this.generateFilename(processedMarkdown);
       
       await storage.updateDocument(documentId, {
         processedMarkdown,
+        suggestedFilename,
         status: 'completed',
         errorMessage: `Partial result: ${successCount} of ${totalChunks} sections processed successfully. ${failedCount} section(s) could not be formatted.`
       });
@@ -345,6 +352,38 @@ The output text length should be close to input length (accounting for overlap r
         status: 'failed',
         errorMessage: 'Failed to finalize document'
       });
+    }
+  }
+
+  private async generateFilename(markdown: string): Promise<string | null> {
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const snippet = markdown.slice(0, 3000);
+      
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 100,
+        system: "You generate short, descriptive filenames for documents. Output ONLY the filename with no extension, no quotes, no explanation. Use title case with hyphens between words. Keep it under 60 characters. Examples: 'Mahamudra-Ocean-of-Definitive-Meaning', 'Heart-Sutra-Commentary', 'Tsalung-Practice-Instructions'",
+        messages: [
+          {
+            role: "user",
+            content: `Generate a descriptive filename for this document based on its content:\n\n${snippet}`
+          }
+        ]
+      });
+      
+      const textBlock = response.content.find((block: any) => block.type === 'text');
+      if (textBlock) {
+        let filename = (textBlock as any).text.trim();
+        filename = filename.replace(/[^a-zA-Z0-9\-_āīūśṣṭḍṅñṃḥĀĪŪŚṢṬḌṄÑṂḤ]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        if (filename.length > 60) filename = filename.substring(0, 60).replace(/-$/, '');
+        log(`Generated filename: ${filename}`, "background-processor");
+        return filename;
+      }
+      return null;
+    } catch (error: any) {
+      log(`Failed to generate filename: ${error.message}`, "background-processor");
+      return null;
     }
   }
 }

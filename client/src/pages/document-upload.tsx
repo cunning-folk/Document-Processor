@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function DocumentUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [resultFilename, setResultFilename] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
@@ -65,6 +66,7 @@ export default function DocumentUpload() {
     },
     onSuccess: (data) => {
       setResult(data.processedMarkdown);
+      setResultFilename(data.suggestedFilename || null);
       if (data.errorMessage && data.errorMessage.includes('Partial result')) {
         toast({
           title: "Processing Complete (Partial)",
@@ -412,7 +414,7 @@ export default function DocumentUpload() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'processed-document.md';
+                    a.download = resultFilename ? `${resultFilename}.md` : 'processed-document.md';
                     a.click();
                     URL.revokeObjectURL(url);
                   }}

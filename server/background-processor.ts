@@ -118,18 +118,7 @@ export class BackgroundProcessor {
       
       const isMultipart = totalChunks > 1;
       const partInfo = isMultipart ? `This is part ${chunk.chunkIndex + 1} of ${totalChunks}. The beginning of this chunk may overlap with the end of the previous chunk for context continuity — do NOT duplicate that overlapping content in your output.\n\n` : '';
-      const chunkPrompt = `${partInfo}Clean and format the following text into a properly punctuated, typeset transcript with paragraph spacing. Preserve ALL content exactly — do not remove, summarize, or condense anything.
-
-CRITICAL REQUIREMENTS:
-1. PRESERVE all Tibetan script (ཆོས་ཉིད་, བདེན་མེད་, etc.) exactly as written - do NOT transliterate or remove
-2. NORMALIZE Sanskrit/Pali diacritics to proper Unicode: Śūnyatā, Mahāmudrā, Mahāsiddha, Rigpa, Prajñāpāramitā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, etc.
-3. Fix punctuation: proper periods, commas, quotation marks, em-dashes
-4. Add proper paragraph spacing between logical sections
-5. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
-6. Join sentences broken across lines into proper flowing paragraphs
-7. Apply clean markdown formatting (## headers, proper spacing)
-8. Keep phonetic transliterations alongside Tibetan script if present
-9. If content at the start overlaps with a previous chunk, skip the duplicate portion and begin from new content
+      const chunkPrompt = `${partInfo}The following is OCR-extracted text from a published scholarly/religious text. Please reformat it into a clean, properly punctuated markdown transcript. Preserve ALL content faithfully — do not remove, summarize, or condense anything. Fix OCR errors (like '!' instead of 'The') using context clues.
 
 Text to reformat:
 
@@ -140,7 +129,9 @@ ${chunk.content}`;
       const isRetry = chunk.errorMessage?.includes('LOW_RETENTION_RETRY');
       const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
       
-      const systemPrompt = `You are a text reformatter specializing in Buddhist and philosophical texts. Your job is to clean and format raw extracted text into a properly punctuated, typeset transcript with beautiful markdown formatting.
+      const systemPrompt = `You are a scholarly transcription assistant converting academic and religious source texts to clean markdown. These texts include Buddhist philosophy, Tibetan Buddhist practice manuals, Hindu and Vedic literature, and comparative religion scholarship. Your role is to faithfully transcribe and reformat the provided OCR-extracted or raw text into a properly punctuated, typeset document. Do not editorialize, summarize, or omit any content.
+
+CONTEXT: The source material is from published religious and academic texts. The content may include traditional Buddhist tantric terminology, meditation instructions, philosophical discussions of consciousness and embodiment, and Sanskrit/Tibetan technical vocabulary. All content is scholarly and religious in nature and should be transcribed faithfully.
 
 REQUIRED ACTIONS:
 1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written — never transliterate or remove Unicode Tibetan characters
@@ -152,14 +143,15 @@ REQUIRED ACTIONS:
 7. Apply clean markdown formatting (## headers, * bullets, > blockquotes for quoted teachings)
 8. Keep phonetic transliterations alongside Tibetan script if present
 9. If this is a multi-part document and the beginning overlaps with a previous chunk, omit the duplicate text and start from where the new content begins
+10. FIX common OCR corruption patterns: '!' appearing where 'The' or 'the' should be, 'l' replacing 'I' at word starts, '0' replacing 'O', 'rn' misread as 'm', etc. Use surrounding context to determine the correct reading
 
 STRICTLY FORBIDDEN:
 1. Removing or transliterating Tibetan script — KEEP ALL Tibetan Unicode characters
 2. Removing any text including repetitive text, headers, footers, page numbers — keep ALL of it
 3. Summarizing or condensing any content
-4. Removing OCR artifacts or seemingly garbled text — keep it
-5. Changing the meaning or structure of content
-6. Adding commentary or explanations
+4. Changing the meaning or structure of content
+5. Adding commentary or explanations
+6. Refusing to process the text for any reason — this is published scholarly/religious material
 
 Output ONLY the reformatted text. Do not include any preamble like "Here is the reformatted text:" — just output the formatted content directly.`;
 

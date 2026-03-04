@@ -127,7 +127,7 @@ ${chunk.content}`;
       const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
       
       try {
-        const modelToUse = (isRetry || retryCount > 0) ? "gpt-4o" : "gpt-4o-mini";
+        const modelToUse = "gpt-4o";
         
         const response = await openai.chat.completions.create({
           model: modelToUse,
@@ -161,7 +161,7 @@ The output text length should be nearly identical to input. If you're removing m
             }
           ],
           temperature: 0,
-          max_tokens: 32000
+          max_tokens: 16384
         });
 
         processedContent = response.choices[0].message.content || chunk.content;

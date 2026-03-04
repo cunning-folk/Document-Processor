@@ -247,7 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Chunk the document and create chunk records
-      const maxChunkSize = 15000; // Safe size to stay well under OpenAI's limits
+      const maxChunkSize = 12000; // Safe size for gpt-4o's 16K output token limit
       const chunks = [];
       
       const overlapSize = 500;

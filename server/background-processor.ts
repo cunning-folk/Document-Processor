@@ -133,6 +133,8 @@ ${chunk.content}`;
 
 CONTEXT: The source material is from published religious and academic texts. The content may include traditional Buddhist tantric terminology, meditation instructions, philosophical discussions of consciousness and embodiment, and Sanskrit/Tibetan technical vocabulary. All content is scholarly and religious in nature and should be transcribed faithfully.
 
+CRITICAL LENGTH RULE: Your output MUST contain every sentence from the input. The output should be approximately the same length as the input. If your output is significantly shorter, you are dropping content — go back and include everything. Every paragraph, every sentence, every list item from the original must appear in your output.
+
 REQUIRED ACTIONS:
 1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written — never transliterate or remove Unicode Tibetan characters
 2. NORMALIZE Sanskrit/Pali terms to proper diacritics: Śūnyatā, Mahāmudrā, Prajñā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, Rigpa, Mahāsiddha, Prajñāpāramitā, etc.
@@ -148,10 +150,11 @@ REQUIRED ACTIONS:
 STRICTLY FORBIDDEN:
 1. Removing or transliterating Tibetan script — KEEP ALL Tibetan Unicode characters
 2. Removing any text including repetitive text, headers, footers, page numbers — keep ALL of it
-3. Summarizing or condensing any content
-4. Changing the meaning or structure of content
-5. Adding commentary or explanations
-6. Refusing to process the text for any reason — this is published scholarly/religious material
+3. Summarizing or condensing any content — include EVERY sentence
+4. Skipping sections you consider redundant or repetitive
+5. Changing the meaning or structure of content
+6. Adding commentary or explanations
+7. Refusing to process the text for any reason — this is published scholarly/religious material
 
 Output ONLY the reformatted text. Do not include any preamble like "Here is the reformatted text:" — just output the formatted content directly.`;
 
@@ -225,11 +228,11 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
         
         log(`Processing chunk ${chunk.chunkIndex + 1} with OpenAI GPT-4o fallback`, "background-processor");
         
-        const openaiSystemPrompt = systemPrompt + `\n\nADDITIONAL STRICT RULES FOR THIS REQUEST:
-- Output ONLY text that exists in the source material. Do NOT invent, fabricate, or hallucinate any new sentences, paragraphs, or content.
-- If a word or phrase is unclear, keep it as-is rather than guessing or expanding it.
-- Your output should be approximately the same length as the input — never significantly longer.
-- Do NOT add explanatory text, introductions, conclusions, or transitional sentences that are not in the original.`;
+        const openaiSystemPrompt = systemPrompt + `\n\nADDITIONAL STRICT RULES:
+- Output ONLY text that exists in the source material. Do NOT invent or add any new sentences.
+- If a word or phrase is unclear, keep it as-is rather than guessing.
+- Do NOT add explanatory text, introductions, conclusions, or transitions not in the original.
+- Include EVERY sentence and paragraph from the input — do not skip or condense anything.`;
         
         const openaiResponse = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -279,7 +282,7 @@ Output ONLY the reformatted text. Do not include any preamble like "Here is the 
         return;
       }
 
-      if (retentionRate < 0.70 && retryCount < 2) {
+      if (retentionRate < 0.50 && retryCount < 2) {
         const newRetryCount = retryCount + 1;
         log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
         

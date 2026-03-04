@@ -2,13 +2,15 @@ import OpenAI from 'openai';
 import { storage } from './storage';
 import { log } from './vite';
 
-const MAX_CONCURRENT_CHUNKS = 3;
+const MAX_CONCURRENT_CHUNKS = 1;
+const RATE_LIMIT_DELAY_MS = 10000;
 
 export class BackgroundProcessor {
   private isProcessing = false;
   private processingInterval: NodeJS.Timeout | null = null;
   private stuckChunkThreshold = 5 * 60 * 1000;
   private activeChunks = new Set<number>();
+  private lastApiCallTime = 0;
 
   start() {
     if (this.processingInterval) return;
@@ -16,7 +18,7 @@ export class BackgroundProcessor {
     log("Starting background processor", "background-processor");
     this.processingInterval = setInterval(() => {
       this.processNextChunks();
-    }, 2000);
+    }, 3000);
   }
 
   stop() {
@@ -25,6 +27,16 @@ export class BackgroundProcessor {
       this.processingInterval = null;
       log("Stopped background processor", "background-processor");
     }
+  }
+
+  private async waitForRateLimit() {
+    const elapsed = Date.now() - this.lastApiCallTime;
+    if (elapsed < RATE_LIMIT_DELAY_MS) {
+      const waitTime = RATE_LIMIT_DELAY_MS - elapsed;
+      log(`Rate limit spacing: waiting ${waitTime}ms before next API call`, "background-processor");
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    this.lastApiCallTime = Date.now();
   }
 
   async processNextChunks() {
@@ -57,8 +69,6 @@ export class BackgroundProcessor {
               this.activeChunks.delete(chunk.id);
             });
           }
-          
-          log(`Launched ${chunksToProcess.length} parallel chunk(s) for document ${document.id} (${this.activeChunks.size} active total)`, "background-processor");
         } else if (pendingChunks.length === 0) {
           const processingChunks = chunks.filter(chunk => chunk.status === 'processing' || this.activeChunks.has(chunk.id));
           if (processingChunks.length > 0) continue;
@@ -102,6 +112,8 @@ export class BackgroundProcessor {
         return;
       }
       
+      await this.waitForRateLimit();
+      
       const openai = new OpenAI({ apiKey: document.apiKey });
       
       const isMultipart = totalChunks > 1;
@@ -126,15 +138,24 @@ ${chunk.content}`;
       const isRetry = chunk.errorMessage?.includes('LOW_RETENTION_RETRY');
       const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
       
-      try {
-        const modelToUse = "gpt-4o";
-        
-        const response = await openai.chat.completions.create({
-          model: modelToUse,
-          messages: [
-            {
-              role: "system",
-              content: `You are a text reformatter specializing in Buddhist and philosophical texts. You ONLY fix formatting - you do NOT edit, remove, or condense content.
+      const maxRetries = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            const backoffMs = attempt * 15000;
+            log(`Rate limit retry ${attempt}/${maxRetries} for chunk ${chunk.chunkIndex + 1}, waiting ${backoffMs}ms`, "background-processor");
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            this.lastApiCallTime = Date.now();
+          }
+          
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: `You are a text reformatter specializing in Buddhist and philosophical texts. You ONLY fix formatting - you do NOT edit, remove, or condense content.
 
 REQUIRED ACTIONS:
 1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written - never transliterate or remove Unicode Tibetan characters
@@ -153,105 +174,71 @@ STRICTLY FORBIDDEN:
 4. Removing OCR artifacts or seemingly garbled text
 5. Changing the meaning or structure of content
 
-The output text length should be nearly identical to input. If you're removing more than 5% of characters, you're doing it wrong.`
-            },
-            {
-              role: "user",
-              content: chunkPrompt
-            }
-          ],
-          temperature: 0,
-          max_tokens: 16384
-        });
+The output text length should be close to input length (accounting for overlap removal and formatting changes).`
+              },
+              {
+                role: "user",
+                content: chunkPrompt
+              }
+            ],
+            temperature: 0,
+            max_tokens: 16384
+          });
 
-        processedContent = response.choices[0].message.content || chunk.content;
-        
-        const finishReason = response.choices[0].finish_reason;
-        if (finishReason === 'length') {
-          log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (finish_reason: length), marking for retry`, "background-processor");
-          if (retryCount < 2) {
+          processedContent = response.choices[0].message.content || chunk.content;
+          
+          const finishReason = response.choices[0].finish_reason;
+          if (finishReason === 'length') {
+            log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (finish_reason: length), marking for retry`, "background-processor");
+            if (retryCount < 2) {
+              await storage.updateDocumentChunk(chunk.id, {
+                status: 'pending',
+                errorMessage: `LOW_RETENTION_RETRY_${retryCount + 1}: truncated response`
+              });
+              return;
+            }
+          }
+          
+          const originalLength = chunk.content.length;
+          const processedLength = processedContent.length;
+          const overlapAllowance = chunk.chunkIndex > 0 ? 500 : 0;
+          const effectiveOriginalLength = originalLength - overlapAllowance;
+          const retentionRate = effectiveOriginalLength > 0 ? processedLength / effectiveOriginalLength : 1;
+          
+          log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${effectiveOriginalLength} effective chars)`, "background-processor");
+          
+          if (retentionRate < 0.85 && retryCount < 2) {
+            const newRetryCount = retryCount + 1;
+            log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
+            
             await storage.updateDocumentChunk(chunk.id, {
               status: 'pending',
-              errorMessage: `LOW_RETENTION_RETRY_${retryCount + 1}: truncated response`
+              errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
             });
             return;
           }
-        }
-        
-        const originalLength = chunk.content.length;
-        const processedLength = processedContent.length;
-        const retentionRate = processedLength / originalLength;
-        
-        log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${originalLength} chars) using ${modelToUse}`, "background-processor");
-        
-        if (retentionRate < 0.95 && retryCount < 2) {
-          const newRetryCount = retryCount + 1;
-          log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
           
-          await storage.updateDocumentChunk(chunk.id, {
-            status: 'pending',
-            errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
-          });
-          return;
-        }
-        
-        log(`Completed chunk ${chunk.chunkIndex + 1} using ${modelToUse} for document ${document.id}`, "background-processor");
+          log(`Completed chunk ${chunk.chunkIndex + 1} for document ${document.id}`, "background-processor");
+          lastError = null;
+          break;
 
-      } catch (directApiError) {
-        log(`Direct API failed, trying assistant for chunk ${chunk.chunkIndex + 1}: ${directApiError}`, "background-processor");
-        
-        const thread = await openai.beta.threads.create();
-        
-        if (!thread || !thread.id) {
-          throw new Error(`Failed to create thread for chunk ${chunk.chunkIndex + 1}`);
-        }
-
-        await openai.beta.threads.messages.create(thread.id, {
-          role: "user",
-          content: chunkPrompt
-        });
-
-        const run = await openai.beta.threads.runs.create(thread.id, {
-          assistant_id: document.assistantId
-        });
-
-        let runStatus = await openai.beta.threads.runs.retrieve(run.id, {
-          thread_id: thread.id
-        });
-        
-        const maxWaitTime = 2 * 60 * 1000;
-        const startTime = Date.now();
-        
-        while (runStatus.status === "queued" || runStatus.status === "in_progress") {
-          if (Date.now() - startTime > maxWaitTime) {
-            throw new Error(`OpenAI assistant timeout after 2 minutes for chunk ${chunk.chunkIndex + 1}`);
+        } catch (apiError: any) {
+          lastError = apiError;
+          if (apiError.message?.includes('429') || apiError.message?.includes('rate limit')) {
+            if (attempt < maxRetries) {
+              continue;
+            }
           }
-          
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          runStatus = await openai.beta.threads.runs.retrieve(run.id, {
-            thread_id: thread.id
-          });
-          
-          log(`Waiting for assistant... Status: ${runStatus.status}`, "background-processor");
+          throw apiError;
         }
-
-        if (runStatus.status === "completed") {
-          const messages = await openai.beta.threads.messages.list(thread.id);
-          const assistantMessage = messages.data.find(m => m.role === "assistant");
-          
-          if (assistantMessage && assistantMessage.content[0].type === "text") {
-            processedContent = assistantMessage.content[0].text.value;
-            log(`Completed chunk ${chunk.chunkIndex + 1} using assistant for document ${document.id}`, "background-processor");
-          } else {
-            throw new Error(`No valid response from assistant for chunk ${chunk.chunkIndex + 1}`);
-          }
-        } else {
-          throw new Error(`Assistant run failed with status: ${runStatus.status} for chunk ${chunk.chunkIndex + 1}`);
-        }
+      }
+      
+      if (lastError) {
+        throw lastError;
       }
 
       await storage.updateDocumentChunk(chunk.id, {
-        processedContent,
+        processedContent: processedContent!,
         status: 'completed'
       });
       
@@ -267,7 +254,8 @@ The output text length should be nearly identical to input. If you're removing m
                          error.message.includes('timeout') || 
                          error.message.includes('network') ||
                          error.message.includes('503') ||
-                         error.message.includes('502');
+                         error.message.includes('502') ||
+                         error.message.includes('429');
       
       if (isRetryable) {
         await storage.updateDocumentChunk(chunk.id, {

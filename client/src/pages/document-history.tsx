@@ -214,6 +214,7 @@ export default function DocumentHistory() {
           <div className="space-y-4">
             {data?.documents.map((doc, index) => (
               <Card key={doc.id} className={`animate-in slide-in-from-bottom-2 duration-500 hover:shadow-lg transition-all hover:scale-[1.02] border-l-4 ${
+                doc.status === 'completed' && doc.errorMessage?.includes('Partial') ? 'border-l-amber-500' :
                 doc.status === 'completed' ? 'border-l-green-500' : 
                 doc.status === 'processing' ? 'border-l-blue-500' : 
                 doc.status === 'failed' ? 'border-l-red-500' : 'border-l-gray-300'
@@ -252,6 +253,11 @@ export default function DocumentHistory() {
                       {doc.status === 'failed' && doc.errorMessage && (
                         <p className="text-xs sm:text-sm text-red-500">
                           Error: {doc.errorMessage}
+                        </p>
+                      )}
+                      {doc.status === 'completed' && doc.errorMessage?.includes('Partial') && (
+                        <p className="text-xs sm:text-sm text-amber-600">
+                          {doc.errorMessage}
                         </p>
                       )}
                     </div>

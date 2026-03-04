@@ -2,18 +2,21 @@ import OpenAI from 'openai';
 import { storage } from './storage';
 import { log } from './vite';
 
+const MAX_CONCURRENT_CHUNKS = 3;
+
 export class BackgroundProcessor {
   private isProcessing = false;
   private processingInterval: NodeJS.Timeout | null = null;
-  private stuckChunkThreshold = 5 * 60 * 1000; // 5 minutes in milliseconds
+  private stuckChunkThreshold = 5 * 60 * 1000;
+  private activeChunks = new Set<number>();
 
   start() {
     if (this.processingInterval) return;
     
     log("Starting background processor", "background-processor");
     this.processingInterval = setInterval(() => {
-      this.processNextChunk();
-    }, 2000); // Check every 2 seconds
+      this.processNextChunks();
+    }, 2000);
   }
 
   stop() {
@@ -24,44 +27,56 @@ export class BackgroundProcessor {
     }
   }
 
-  async processNextChunk() {
+  async processNextChunks() {
     if (this.isProcessing) return;
     this.isProcessing = true;
 
     try {
-      // First, cleanup expired documents for privacy
       const deletedCount = await storage.cleanupExpiredDocuments();
       if (deletedCount > 0) {
         log(`Cleaned up ${deletedCount} expired documents for privacy`, "background-processor");
       }
 
-      // Check for and recover stuck chunks
       await this.recoverStuckChunks();
 
-      // Find pending chunks to process
       const pendingDocuments = await storage.getDocumentsByStatus('processing');
       
       for (const document of pendingDocuments) {
         const chunks = await storage.getDocumentChunks(document.id);
-        const pendingChunk = chunks.find(chunk => chunk.status === 'pending');
+        const pendingChunks = chunks.filter(chunk => chunk.status === 'pending' && !this.activeChunks.has(chunk.id));
         
-        if (pendingChunk) {
-          await this.processChunk(document, pendingChunk, chunks.length);
-          break; // Process one chunk at a time
-        } else {
-          // Check if all chunks are completed
+        if (pendingChunks.length > 0) {
+          const availableSlots = MAX_CONCURRENT_CHUNKS - this.activeChunks.size;
+          if (availableSlots <= 0) break;
+          
+          const chunksToProcess = pendingChunks.slice(0, availableSlots);
+          
+          for (const chunk of chunksToProcess) {
+            this.activeChunks.add(chunk.id);
+            this.processChunk(document, chunk, chunks.length).finally(() => {
+              this.activeChunks.delete(chunk.id);
+            });
+          }
+          
+          log(`Launched ${chunksToProcess.length} parallel chunk(s) for document ${document.id} (${this.activeChunks.size} active total)`, "background-processor");
+        } else if (pendingChunks.length === 0) {
+          const processingChunks = chunks.filter(chunk => chunk.status === 'processing' || this.activeChunks.has(chunk.id));
+          if (processingChunks.length > 0) continue;
+
           const completedChunks = chunks.filter(chunk => chunk.status === 'completed');
           const failedChunks = chunks.filter(chunk => chunk.status === 'failed');
           
-          if (completedChunks.length === chunks.length) {
-            // All chunks completed, combine results
-            await this.finalizeDocument(document.id, chunks);
-          } else if (failedChunks.length > 0) {
-            // Some chunks failed
-            await storage.updateDocument(document.id, {
-              status: 'failed',
-              errorMessage: `${failedChunks.length} chunks failed to process`
-            });
+          if (completedChunks.length + failedChunks.length === chunks.length) {
+            if (failedChunks.length === 0) {
+              await this.finalizeDocument(document.id, chunks);
+            } else if (completedChunks.length > 0) {
+              await this.finalizeDocumentPartial(document.id, chunks, failedChunks.length);
+            } else {
+              await storage.updateDocument(document.id, {
+                status: 'failed',
+                errorMessage: `All ${failedChunks.length} chunks failed to process`
+              });
+            }
           }
         }
       }
@@ -78,7 +93,6 @@ export class BackgroundProcessor {
       
       await storage.updateDocumentChunk(chunk.id, { status: 'processing' });
       
-      // Validate chunk size before processing
       if (chunk.content.length > 100000) {
         log(`Chunk ${chunk.chunkIndex + 1} is too large (${chunk.content.length} chars), marking as failed`, "background-processor");
         await storage.updateDocumentChunk(chunk.id, {
@@ -91,16 +105,17 @@ export class BackgroundProcessor {
       const openai = new OpenAI({ apiKey: document.apiKey });
       
       const isMultipart = totalChunks > 1;
-      const partInfo = isMultipart ? `This is part ${chunk.chunkIndex + 1} of ${totalChunks}.\n\n` : '';
+      const partInfo = isMultipart ? `This is part ${chunk.chunkIndex + 1} of ${totalChunks}. The beginning of this chunk may overlap with the end of the previous chunk for context continuity — do NOT duplicate that overlapping content in your output.\n\n` : '';
       const chunkPrompt = `${partInfo}Reformat this text with proper markdown formatting. Preserve ALL content exactly.
 
 CRITICAL REQUIREMENTS:
 1. PRESERVE all Tibetan script (ཆོས་ཉིད་, བདེན་མེད་, etc.) exactly as written - do NOT transliterate or remove
 2. NORMALIZE Sanskrit/Pali diacritics to proper Unicode: Śūnyatā, Mahāsiddha, Rigpa, Prajñāpāramitā, Dharmakāya, etc.
 3. Add proper paragraph spacing between logical sections
-4. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')
+4. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
 5. Apply clean markdown formatting (## headers, proper spacing)
 6. Keep phonetic transliterations alongside Tibetan script if present
+7. If content at the start overlaps with a previous chunk, skip the duplicate portion and begin from new content
 
 Text to reformat:
 
@@ -108,12 +123,10 @@ ${chunk.content}`;
 
       let processedContent: string;
 
-      // Check if this is a retry for low retention
       const isRetry = chunk.errorMessage?.includes('LOW_RETENTION_RETRY');
       const retryCount = isRetry ? parseInt(chunk.errorMessage.match(/RETRY_(\d+)/)?.[1] || '0') : 0;
       
       try {
-        // Use gpt-4o for better instruction following, especially on retries
         const modelToUse = (isRetry || retryCount > 0) ? "gpt-4o" : "gpt-4o-mini";
         
         const response = await openai.chat.completions.create({
@@ -126,11 +139,12 @@ ${chunk.content}`;
 REQUIRED ACTIONS:
 1. PRESERVE all Tibetan script (བོད་ཡིག) exactly as written - never transliterate or remove Unicode Tibetan characters
 2. NORMALIZE Sanskrit/Pali terms to proper diacritics: Śūnyatā, Mahāmudrā, Prajñā, Dharmakāya, Nirmāṇakāya, Sambhogakāya, Bodhicitta, Rigpa, Mahāsiddha, etc.
-3. Join words split by hyphens at line breaks (e.g., 'beauti-\\nful' → 'beautiful')
+3. Join words split by hyphens at line breaks (e.g., 'beauti-\nful' → 'beautiful')
 4. Join sentences broken across lines
 5. Add proper paragraph spacing between logical sections
 6. Apply clean markdown formatting (## headers, * bullets, etc.)
 7. Keep phonetic transliterations alongside Tibetan script if present
+8. If this is a multi-part document and the beginning overlaps with a previous chunk, omit the duplicate text and start from where the new content begins
 
 STRICTLY FORBIDDEN:
 1. Removing or transliterating Tibetan script - KEEP ALL Tibetan Unicode characters
@@ -152,7 +166,6 @@ The output text length should be nearly identical to input. If you're removing m
 
         processedContent = response.choices[0].message.content || chunk.content;
         
-        // Check if response was truncated
         const finishReason = response.choices[0].finish_reason;
         if (finishReason === 'length') {
           log(`Chunk ${chunk.chunkIndex + 1} response was TRUNCATED (finish_reason: length), marking for retry`, "background-processor");
@@ -165,14 +178,12 @@ The output text length should be nearly identical to input. If you're removing m
           }
         }
         
-        // Validate content retention
         const originalLength = chunk.content.length;
         const processedLength = processedContent.length;
         const retentionRate = processedLength / originalLength;
         
         log(`Chunk ${chunk.chunkIndex + 1} retention: ${(retentionRate * 100).toFixed(1)}% (${processedLength}/${originalLength} chars) using ${modelToUse}`, "background-processor");
         
-        // If retention is too low and we haven't retried too many times, mark for retry
         if (retentionRate < 0.95 && retryCount < 2) {
           const newRetryCount = retryCount + 1;
           log(`Chunk ${chunk.chunkIndex + 1} has low retention (${(retentionRate * 100).toFixed(1)}%), marking for retry ${newRetryCount}`, "background-processor");
@@ -181,7 +192,7 @@ The output text length should be nearly identical to input. If you're removing m
             status: 'pending',
             errorMessage: `LOW_RETENTION_RETRY_${newRetryCount}: ${(retentionRate * 100).toFixed(1)}% retention`
           });
-          return; // Exit without marking as completed
+          return;
         }
         
         log(`Completed chunk ${chunk.chunkIndex + 1} using ${modelToUse} for document ${document.id}`, "background-processor");
@@ -189,7 +200,6 @@ The output text length should be nearly identical to input. If you're removing m
       } catch (directApiError) {
         log(`Direct API failed, trying assistant for chunk ${chunk.chunkIndex + 1}: ${directApiError}`, "background-processor");
         
-        // Fallback to assistant if direct API fails
         const thread = await openai.beta.threads.create();
         
         if (!thread || !thread.id) {
@@ -245,7 +255,6 @@ The output text length should be nearly identical to input. If you're removing m
         status: 'completed'
       });
       
-      // Update document processed chunks count
       const currentDoc = await storage.getDocument(document.id);
       await storage.updateDocument(document.id, {
         processedChunks: (currentDoc?.processedChunks || 0) + 1
@@ -254,7 +263,6 @@ The output text length should be nearly identical to input. If you're removing m
     } catch (error: any) {
       log(`Error processing chunk ${chunk.chunkIndex + 1}: ${error.message}`, "background-processor");
       
-      // Implement retry logic for transient errors
       const isRetryable = error.message.includes('rate limit') || 
                          error.message.includes('timeout') || 
                          error.message.includes('network') ||
@@ -262,7 +270,6 @@ The output text length should be nearly identical to input. If you're removing m
                          error.message.includes('502');
       
       if (isRetryable) {
-        // Mark for retry by resetting to pending status
         await storage.updateDocumentChunk(chunk.id, {
           status: 'pending',
           errorMessage: `Retrying: ${error.message}`
@@ -286,6 +293,7 @@ The output text length should be nearly identical to input. If you're removing m
         log(`Found ${stuckChunks.length} stuck chunks, resetting to pending`, "background-processor");
         
         for (const chunk of stuckChunks) {
+          this.activeChunks.delete(chunk.id);
           await storage.updateDocumentChunk(chunk.id, {
             status: 'pending',
             errorMessage: null
@@ -301,7 +309,6 @@ The output text length should be nearly identical to input. If you're removing m
 
   async finalizeDocument(documentId: number, chunks: any[]) {
     try {
-      // Combine all processed chunks in order
       const sortedChunks = chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
       const processedMarkdown = sortedChunks
         .map(chunk => chunk.processedContent)
@@ -312,9 +319,40 @@ The output text length should be nearly identical to input. If you're removing m
         status: 'completed'
       });
       
-      log(`Document ${documentId} processing completed`, "background-processor");
+      log(`Document ${documentId} processing completed (all ${chunks.length} chunks successful)`, "background-processor");
     } catch (error: any) {
       log(`Error finalizing document ${documentId}: ${error.message}`, "background-processor");
+      await storage.updateDocument(documentId, {
+        status: 'failed',
+        errorMessage: 'Failed to finalize document'
+      });
+    }
+  }
+
+  async finalizeDocumentPartial(documentId: number, chunks: any[], failedCount: number) {
+    try {
+      const sortedChunks = chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      const totalChunks = sortedChunks.length;
+      const successCount = totalChunks - failedCount;
+      
+      const processedParts = sortedChunks.map(chunk => {
+        if (chunk.status === 'completed' && chunk.processedContent) {
+          return chunk.processedContent;
+        }
+        return `\n\n---\n\n**[Section ${chunk.chunkIndex + 1} of ${totalChunks} could not be processed: ${chunk.errorMessage || 'Unknown error'}]**\n\n---\n\n`;
+      });
+      
+      const processedMarkdown = processedParts.join('\n\n');
+      
+      await storage.updateDocument(documentId, {
+        processedMarkdown,
+        status: 'completed',
+        errorMessage: `Partial result: ${successCount} of ${totalChunks} sections processed successfully. ${failedCount} section(s) could not be formatted.`
+      });
+      
+      log(`Document ${documentId} partially completed: ${successCount}/${totalChunks} chunks successful`, "background-processor");
+    } catch (error: any) {
+      log(`Error finalizing partial document ${documentId}: ${error.message}`, "background-processor");
       await storage.updateDocument(documentId, {
         status: 'failed',
         errorMessage: 'Failed to finalize document'

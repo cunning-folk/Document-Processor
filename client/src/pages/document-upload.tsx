@@ -47,15 +47,16 @@ export default function DocumentUpload() {
           setIsPolling(false);
           throw new Error(doc.errorMessage || 'Processing failed');
         } else {
-          if (doc.totalChunks && doc.processedChunks) {
-            const progress = Math.round((doc.processedChunks / doc.totalChunks) * 100);
+          if (doc.totalChunks && doc.totalChunks > 1) {
+            const processed = doc.processedChunks || 0;
+            const progress = Math.round((processed / doc.totalChunks) * 100);
             toast({
               title: "Processing...",
-              description: `Progress: ${progress}% (${doc.processedChunks}/${doc.totalChunks} chunks)`,
+              description: `Progress: ${progress}% (${processed}/${doc.totalChunks} sections)`,
             });
           }
           
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 3000));
           return pollResult(id);
         }
       };
@@ -64,10 +65,18 @@ export default function DocumentUpload() {
     },
     onSuccess: (data) => {
       setResult(data.processedMarkdown);
-      toast({
-        title: "Processing Complete",
-        description: "Your document has been processed successfully."
-      });
+      if (data.errorMessage && data.errorMessage.includes('Partial result')) {
+        toast({
+          title: "Processing Complete (Partial)",
+          description: data.errorMessage,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Processing Complete",
+          description: "Your document has been processed successfully."
+        });
+      }
     },
     onError: (error: Error) => {
       toast({

@@ -250,23 +250,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const maxChunkSize = 15000; // Safe size to stay well under OpenAI's limits
       const chunks = [];
       
-      log(`Starting chunking for ${req.file.originalname}: ${extractedText.length} characters`, "express");
+      const overlapSize = 500;
+      
+      log(`Starting chunking for ${req.file.originalname}: ${extractedText.length} characters (overlap: ${overlapSize} chars)`, "express");
       
       if (extractedText.length > maxChunkSize) {
-        // Try multiple splitting strategies for robust chunking
-        let textParts = extractedText.split('\n\n').filter(part => part.trim()); // Paragraphs
+        let textParts = extractedText.split('\n\n').filter(part => part.trim());
         
-        // If we don't get enough splits from paragraphs, try single newlines
         if (textParts.length === 1) {
           textParts = extractedText.split('\n').filter(part => part.trim());
         }
         
-        // If still one big chunk, force split by sentences
         if (textParts.length === 1) {
           textParts = extractedText.split(/(?<=[.!?])\s+/).filter(part => part.trim());
         }
         
-        // If still one chunk, force split by character count as last resort
         if (textParts.length === 1) {
           const text = textParts[0];
           textParts = [];
@@ -278,22 +276,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let currentChunk = '';
         
         for (const part of textParts) {
-          // If adding this part would exceed the limit
           if ((currentChunk + part).length > maxChunkSize && currentChunk.length > 0) {
             chunks.push(currentChunk.trim());
-            currentChunk = part;
+            const overlapText = currentChunk.slice(-overlapSize);
+            currentChunk = overlapText + '\n' + part;
           } 
-          // If even a single part is too large, force split it
           else if (part.length > maxChunkSize) {
-            // Save current chunk if it has content
             if (currentChunk.trim()) {
               chunks.push(currentChunk.trim());
+              const overlapText = currentChunk.slice(-overlapSize);
               currentChunk = '';
-            }
-            
-            // Force split by character count
-            for (let i = 0; i < part.length; i += maxChunkSize) {
-              chunks.push(part.substring(i, i + maxChunkSize));
+              
+              for (let i = 0; i < part.length; i += maxChunkSize) {
+                const prefix = (i === 0 && overlapText) ? overlapText + '\n' : '';
+                chunks.push(prefix + part.substring(i, i + maxChunkSize));
+              }
+            } else {
+              for (let i = 0; i < part.length; i += maxChunkSize) {
+                chunks.push(part.substring(i, i + maxChunkSize));
+              }
             }
           } else {
             currentChunk += (currentChunk ? '\n' : '') + part;

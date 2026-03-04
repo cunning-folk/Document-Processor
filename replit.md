@@ -41,7 +41,9 @@ Preferred communication style: Simple, everyday language.
 ### Document Processing Pipeline
 - **Multi-format support**: PDF, TXT, and Markdown files
 - **PDF processing** with text extraction, normalization, and OCR fallback using PyPDF2
-- **Document chunking** for large files to handle OpenAI API limits
+- **Document chunking** with 500-character context overlap between chunks for continuity
+- **Parallel chunk processing** - up to 3 chunks processed concurrently (MAX_CONCURRENT_CHUNKS)
+- **Partial success handling** - if some chunks fail, completed sections are still delivered with placeholders for failed sections
 - **Background processing** with status tracking and progress updates
 - **Client-side encryption** using CryptoJS before upload for privacy
 - **Retry mechanism** for failed processing attempts

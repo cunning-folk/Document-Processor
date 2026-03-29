@@ -25,7 +25,7 @@ export async function setupAuth(app: Express) {
   );
 
   // Login endpoint - checks password against APP_PASSWORD env var
-  app.post("/api/login", (req, res) => {
+  app.post("/api/login", async (req, res) => {
     const { password } = req.body;
     const appPassword = process.env.APP_PASSWORD;
 

@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { pdfProcessor } from "./pdf-processor";
 import { log } from "./vite";
 import { backgroundProcessor } from "./background-processor";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated, getUserId } from "./auth";
 
 // Sanitize text for PostgreSQL - removes null bytes and other invalid UTF-8 sequences
 function sanitizeTextForDB(text: string): string {
@@ -27,22 +27,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
   
-  // Auth routes
-  app.get('/api/auth/user', async (req: any, res) => {
-    try {
-      if (!req.isAuthenticated() || !req.user?.claims?.sub) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-      
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
+  // Health check endpoint (no auth required)
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok" });
   });
-  
+
   // Start background processor
   backgroundProcessor.start();
 
@@ -235,7 +224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sanitizedText = sanitizeTextForDB(extractedText);
 
       // Create document record with user ID
-      const userId = (req.user as any)?.claims?.sub || 'demo_user'; // Fallback for demo
+      const userId = getUserId(req);
       const document = await storage.createDocument({
         userId,
         filename: req.file.originalname,
@@ -446,7 +435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const offset = (page - 1) * limit;
       
       // Get user ID from auth or fallback for demo
-      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      const userId = getUserId(req);
       
       // Get user's documents ordered by creation date (newest first)
       const userDocuments = await storage.getUserDocuments(userId);
@@ -473,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/documents/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      const userId = getUserId(req);
       
       const document = await storage.getUserDocument(id, userId);
       
@@ -491,7 +480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/documents/:id/download", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = (req.user as any)?.claims?.sub || 'demo_user';
+      const userId = getUserId(req);
       
       const document = await storage.getUserDocument(id, userId);
       

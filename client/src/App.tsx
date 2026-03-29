@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Switch, Route, Link, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { FloatingActionButton } from "@/components/floating-action-button";
@@ -9,10 +10,11 @@ import { FileText, History } from "lucide-react";
 import DocumentUpload from "@/pages/document-upload";
 import DocumentHistory from "@/pages/document-history";
 import NotFound from "@/pages/not-found";
+import Login from "@/pages/login";
 
 function Navigation() {
   const [location] = useLocation();
-  
+
   return (
     <nav className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-40 animate-in slide-in-from-top-2 duration-500">
       <div className="container mx-auto px-4 py-3">
@@ -24,7 +26,7 @@ function Navigation() {
           </Link>
           <div className="flex gap-2 animate-in slide-in-from-right-2 duration-700 delay-200">
             <Link href="/">
-              <Button 
+              <Button
                 variant={location === "/" ? "default" : "outline"}
                 size="sm"
                 className="flex-1 sm:flex-none"
@@ -35,7 +37,7 @@ function Navigation() {
               </Button>
             </Link>
             <Link href="/history">
-              <Button 
+              <Button
                 variant={location === "/history" ? "default" : "outline"}
                 size="sm"
                 className="flex-1 sm:flex-none"
@@ -52,7 +54,7 @@ function Navigation() {
   );
 }
 
-function Router() {
+function AuthenticatedApp() {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
@@ -69,12 +71,42 @@ function Router() {
   );
 }
 
+function AppContent() {
+  const [authKey, setAuthKey] = useState(0);
+
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["/api/auth/user", authKey],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/user", { credentials: "include" });
+      if (res.status === 401) return null;
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+    staleTime: Infinity,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login onLogin={() => setAuthKey((k) => k + 1)} />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <AppContent />
       </TooltipProvider>
     </QueryClientProvider>
   );

@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+.replit
+replit.md
+*.pdf
+test*
+comprehensive-test.txt
